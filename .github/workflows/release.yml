@@ -4,12 +4,20 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      ci_run_id:
+        description: 'Successful CI run containing the tested Windows and Mac installers'
+        required: true
+        type: string
 
 permissions:
   contents: write
+  actions: read
 
 jobs:
   release:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -83,3 +91,65 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  publish-tested:
+    name: Publish verified CI installers
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TESTED_RUN: ${{ inputs.ci_run_id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the CI result and application source
+        shell: bash
+        run: |
+          [[ "$TESTED_RUN" =~ ^[0-9]+$ ]]
+          gh api "repos/$GH_REPO/actions/runs/$TESTED_RUN" > /tmp/lolping-ci-run.json
+          python3 - <<'PYCODE'
+          import json
+          from pathlib import Path
+          run = json.loads(Path('/tmp/lolping-ci-run.json').read_text())
+          assert run['status'] == 'completed' and run['conclusion'] == 'success'
+          assert run['path'] == '.github/workflows/ci.yml'
+          Path('/tmp/lolping-tested-sha').write_text(run['head_sha'])
+          PYCODE
+          tested_sha=$(cat /tmp/lolping-tested-sha)
+          git diff --exit-code "$tested_sha" HEAD -- . ':!docs/**' ':!README.md' ':!README.zh-CN.md' ':!.github/**'
+      - name: Download the tested installers
+        run: |
+          gh run download "$TESTED_RUN" --name lolPing-windows-x64 --dir staged/windows
+          gh run download "$TESTED_RUN" --name lolPing-mac-arm64 --dir staged/mac
+      - name: Check hashes and prepare assets
+        run: |
+          python3 - <<'PYCODE'
+          from pathlib import Path
+          import hashlib, json, os, shutil
+          version = json.loads(Path('package.json').read_text())['version']
+          win = Path('staged/windows') / f'lolPing-Setup-{version}.exe'
+          mac = Path('staged/mac') / f'lolPing-{version}-arm64.dmg'
+          expected = Path('staged/windows/SHA256SUMS.txt').read_text(encoding='utf-8-sig').split()[0]
+          assert hashlib.sha256(win.read_bytes()).hexdigest() == expected
+          out = Path('staged/release'); out.mkdir()
+          checksums = []
+          for file in [win, mac]:
+              assert file.stat().st_size > 1000000
+              checksums.append(f'{hashlib.sha256(file.read_bytes()).hexdigest()}  {file.name}')
+              shutil.copyfile(file, out / file.name)
+          (out / 'SHA256SUMS.txt').write_text('\n'.join(checksums) + '\n')
+          tested_sha = Path('/tmp/lolping-tested-sha').read_text()
+          (out / 'BUILD-INFO.txt').write_text(f"Release source: {os.environ['GITHUB_SHA']}\nTested source: {tested_sha}\nVerified CI: https://github.com/{os.environ['GH_REPO']}/actions/runs/{os.environ['TESTED_RUN']}\nRelease reuses the exact tested installer artifacts; source differences are limited to documentation and workflows.\n")
+          PYCODE
+      - name: Publish both installers together
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          tag="v$version"
+          gh release create "$tag" --target "$GITHUB_SHA" --title "lolPing $tag 快捷增强版" --notes-file "docs/releases/$tag.zh-CN.md" --draft
+          gh release upload "$tag" staged/release/*
+          gh release edit "$tag" --draft=false --latest

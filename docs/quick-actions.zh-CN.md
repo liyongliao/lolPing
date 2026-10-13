@@ -115,3 +115,12 @@ Windows 专用测试在 macOS 上跳过。上述是自动化验收范围；具�
 - [Tesseract.js](https://github.com/naptha/tesseract.js) 7.0.0：离线 OCR，Apache-2.0；简体中文和英文训练数据随安装包提供。
 
 对应许可证保留在 `docs/licenses`，并随安装包附带。原版 lolPing 的 MIT 许可证、署名和 Riot 美术声明也继续保留。
+
+
+## v0.6.0 验收记录
+
+[成功的双平台 CI 构建](https://github.com/liyongliao/lolPing/actions/runs/38372435572)，应用代码提交 `ee0b33beff7eb964ecc0237895bf9c34ffd885a1`。Windows 安装后通过 418 项原生检查、737 项 TypeScript 测试和 13 项桌面测试。Mac 本机安装包通过 10 项适用桌面测试，3 项 Windows 专用测试按平台跳过。
+
+新增桌面验收覆盖快速截图窗口复用及高级模块不提前加载、默认收起和最近 3 条执行记录、实际标注图片、离线 OCR、重叠长图拼接，以及两个独立客户端之间的房间鼠标键隔离。Windows 还验证了原生右键拖动轮盘和右键快捷规则。
+
+[下载 v0.6.0](https://github.com/liyongliao/lolPing/releases/tag/v0.6.0)。本版本 Release 复用通过 CI 测试的安装包，并提供 SHA-256 与构建来源。滚动截图使用手动滚动、逐屏采集后自动拼接；不自动滚动其他应用。
