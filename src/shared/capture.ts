@@ -2,7 +2,7 @@ export type CaptureMode = 'fast' | 'advanced';
 export interface CaptureFrame {
   dataUrl: string; width: number; height: number;
   session: number; mode: CaptureMode; stage: 'capture' | 'scroll' | 'working';
-  message?: string; frames?: number; paused?: boolean; stopping?: boolean;
+  message?: string; frames?: number; source?: 'window' | 'screen'; automatic?: boolean; paused?: boolean; stopping?: boolean;
 }
 export interface CaptureRect { x: number; y: number; width: number; height: number }
 export interface CaptureApi {

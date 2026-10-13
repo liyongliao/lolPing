@@ -26,14 +26,16 @@ async function apply(data: CaptureFrame | null) {
   if (!data) { image.src = ''; return; }
   if (data.stage !== 'capture') {
     image.hidden = true; shade.hidden = true; toolbar.hidden = true; panel.hidden = false;
+    panel.dataset.stage=data.stage;
     const scroll = data.stage === 'scroll';
     document.getElementById('panel-title')!.textContent = scroll ? `滚动截图 · ${data.frames} 屏 · ${data.width} × ${data.height}` : '离线文字识别';
     document.getElementById('panel-message')!.textContent = data.message ?? '';
+    document.getElementById('panel-message')!.title=data.message ?? '';
     const preview = document.getElementById('long-preview') as HTMLImageElement;
     preview.hidden = !scroll; preview.src = data.dataUrl;
     document.getElementById('scroll-next')!.hidden = !scroll;
     document.getElementById('scroll-done')!.hidden = !scroll;
-    document.getElementById('scroll-next')!.textContent = data.paused ? '继续滚动' : '暂停';
+    document.getElementById('scroll-next')!.textContent = data.paused ? '继续截取' : data.automatic ? '改为手动' : '自动滚动';
     return;
   }
   const decoded = new Image(); decoded.src = data.dataUrl;
@@ -50,7 +52,6 @@ async function apply(data: CaptureFrame | null) {
     hint.textContent = '拖动框选，松开即复制到剪贴板';
   }
   if (data.mode === 'advanced') await document.fonts.load('18px screenshots-icon');
-  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
   if (token === generation) await api.ready(data.session);
 }
 api.onFrame(data => void apply(data));

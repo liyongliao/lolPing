@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { appendScrollFrame, scrollOffset, type BitmapFrame } from '../../src/shared/scrollStitch';
+import { appendScrollFrame, frameDifference, scrollOffset, type BitmapFrame } from '../../src/shared/scrollStitch';
 import { scopeAllows } from '../../src/shared/mouseButtons';
 import { DEFAULT_QUICK_ACTIONS, normalizeQuickActions, QuickRuleEngine, type QuickRule } from '../../src/shared/quickActions';
 import { normalizeSettings } from '../../src/shared/settings';
@@ -11,6 +11,14 @@ function content(width: number, height: number): BitmapFrame {
 }
 function part(all: BitmapFrame, y: number, height: number): BitmapFrame { return { width: all.width, height, pixels: all.pixels.slice(y * all.width * 4, (y + height) * all.width * 4) }; }
 describe('scroll screenshot stitching', () => {
+  it('compares live frames to wait for stationary content and ignores alpha', () => {
+    const a=content(150,200), b={...a,pixels:a.pixels.slice()};
+    expect(frameDifference(a,b)).toBe(0);
+    for(let i=3;i<b.pixels.length;i+=4)b.pixels[i]=0;
+    expect(frameDifference(a,b)).toBe(0);
+    b.pixels.fill(255);expect(frameDifference(a,b)).toBeGreaterThan(20);
+    expect(frameDifference(a,content(160,200))).toBe(Infinity);
+  });
   it('finds overlap and appends each row exactly once across several screens', () => {
     const all = content(150, 600), a = part(all, 0, 300), b = part(all, 120, 300), c = part(all, 250, 300);
     expect(scrollOffset(a, b)).toBe(120);
@@ -18,6 +26,19 @@ describe('scroll screenshot stitching', () => {
     expect(ab.height).toBe(420); expect(ab.pixels).toEqual(part(all, 0, 420).pixels);
     const abc = appendScrollFrame(ab, b, c);
     expect(abc.height).toBe(550); expect(abc.pixels).toEqual(part(all, 0, 550).pixels);
+  });
+  it('keeps a fixed header and footer once while stitching the moving body', () => {
+    const body=content(150,600),header=content(150,24),footer=content(150,20);
+    const viewport=(y:number,height=250):BitmapFrame=>{
+      const pixels=new Uint8Array(150*(height+44)*4);
+      pixels.set(header.pixels);pixels.set(part(body,y,height).pixels,header.pixels.length);pixels.set(footer.pixels,header.pixels.length+150*height*4);
+      return {width:150,height:height+44,pixels};
+    };
+    const a=viewport(0),b=viewport(80),c=viewport(160);
+    expect(scrollOffset(a,b)).toBe(80);
+    const ab=appendScrollFrame(a,a,b),abc=appendScrollFrame(ab,b,c);
+    expect(abc.pixels).toEqual(viewport(0,410).pixels);
+    expect(abc.height).toBe(454);
   });
   it('ignores an unchanged screen and refuses unrelated images or changed size', () => {
     const a = content(100, 200);

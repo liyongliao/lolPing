@@ -243,7 +243,8 @@ test('fast capture reuses its preloaded window and history is collapsed and boun
     desktopCapturer.getSources = async () => [{ id: 'screen:0:0', display_id: '', name: 'test', appIcon: nativeImage.createEmpty(), thumbnail: nativeImage.createFromBitmap(Buffer.alloc(400 * 200 * 4, 255), { width: 400, height: 200 }) }];
   });
   const start = Date.now(); await page.evaluate(() => window.settingsApi.captureScreenshot(true, 'fast'));
-  expect(Date.now() - start).toBeGreaterThanOrEqual(400);
+  console.log('Warm fast capture ready:',Date.now()-start,'ms');
+  expect(Date.now() - start).toBeLessThan(process.env.CI ? 1500 : 900);
   expect(Date.now() - start).toBeLessThan(2000);
   expect(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('/capture/'))!.id)).toBe(captureBefore);
   const capture = app.windows().find(w => w.url().includes('/capture/'))!;
@@ -261,7 +262,8 @@ test('advanced screenshot editor annotates the copied image', async () => {
   await page.getByRole('button', { name: '高级截图', exact: true }).click();
   await expect.poll(captureVisible).toBe(true);
   const capture = app.windows().find(w => w.url().includes('/capture/'))!;
-  await expect(capture.getByLabel('高级截图完成动作')).toBeVisible();
+  await expect(capture.locator('.screenshots')).toBeVisible();
+  await expect(capture.getByRole('combobox')).toHaveCount(0);
   await capture.mouse.move(100, 140); await capture.mouse.down(); await capture.mouse.move(750, 500); await capture.mouse.up();
   const icons = await capture.evaluate(async () => { await document.fonts.ready; return document.fonts.check('18px screenshots-icon'); });
   expect(icons).toBe(true);
@@ -283,8 +285,11 @@ test('advanced screenshot extracts English text offline into the system clipboar
   await mockScreens([dataUrl]);
   await page.evaluate(() => window.settingsApi.captureScreenshot(true, 'advanced'));
   const capture = app.windows().find(w => w.url().includes('/capture/'))!;
-  await expect(capture.getByLabel('高级截图完成动作')).toBeVisible();
-  await capture.evaluate(async url => { const bytes = Uint8Array.from(atob(url.split(',')[1]), c => c.charCodeAt(0)); await window.captureApi.advanced({ x:0, y:0, width:1200, height:400 }, bytes, 'text'); }, dataUrl);
+  await expect(capture.locator('.screenshots')).toBeVisible();
+  await expect(capture.getByRole('combobox')).toHaveCount(0);
+  const viewport=await capture.evaluate(()=>({width:innerWidth,height:innerHeight}));
+  await capture.mouse.move(5,5);await capture.mouse.down();await capture.mouse.move(viewport.width-5,viewport.height-5);await capture.mouse.up();
+  await capture.getByRole('button',{name:'提取文字',exact:true}).click();
   await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toMatch(/HELLO\s+OCR\s+2026/);
   await expect.poll(captureVisible).toBe(false);
 });
@@ -300,14 +305,16 @@ test('scroll screenshot automatically scrolls, stitches and copies at the bottom
   await mockScreens(frames);
   await page.evaluate(() => window.settingsApi.captureScreenshot(true, 'advanced'));
   const capture = app.windows().find(w => w.url().includes('/capture/'))!;
-  await expect(capture.getByLabel('高级截图完成动作')).toBeVisible();
+  await expect(capture.locator('.screenshots')).toBeVisible();
+  await expect(capture.getByRole('combobox')).toHaveCount(0);
   await capture.evaluate(async url => { const bytes = Uint8Array.from(atob(url.split(',')[1]), c => c.charCodeAt(0)); await window.captureApi.advanced({x:0,y:0,width:800,height:400},bytes,'scroll'); }, frames[0]);
   await expect(capture.getByText(/滚动截图 · 1 屏/)).toBeVisible();
+  await capture.getByRole('button',{name:'自动滚动',exact:true}).click();
   await expect(capture.getByText(/滚动截图 · 2 屏/)).toBeVisible();
   await expect.poll(async()=> (await page.evaluate(()=>window.settingsApi.getQuickState())).capturing, {timeout:12000}).toBe(false);
   expect((await clipboardImage()).size).toEqual({width:800,height:560});
 });
-test('automatic scrolling pauses and can stop while a screen read is pending', async () => {
+test('live scrolling can stop while a screen read is pending', async () => {
   await backupClipboard();
   const frame = await page.evaluate(() => { const c=document.createElement('canvas'); c.width=400; c.height=200; const ctx=c.getContext('2d')!; ctx.fillStyle='#cfe'; ctx.fillRect(0,0,400,200); return c.toDataURL(); });
   await app.evaluate(({desktopCapturer,nativeImage}, url) => {
@@ -323,11 +330,8 @@ test('automatic scrolling pauses and can stop while a screen read is pending', a
   await page.evaluate(()=>window.settingsApi.captureScreenshot(true,'advanced'));
   const capture=app.windows().find(w=>w.url().includes('/capture/'))!;
   await capture.evaluate(async url=>{const bytes=Uint8Array.from(atob(url.split(',')[1]),c=>c.charCodeAt(0));await window.captureApi.advanced({x:0,y:0,width:400,height:200},bytes,'scroll');},frame);
-  await capture.getByRole('button',{name:'暂停',exact:true}).click();
-  await expect(capture.getByRole('button',{name:'继续滚动'})).toBeVisible();
-  await new Promise(r=>setTimeout(r,900));
-  expect(await app.evaluate(()=> (globalThis as unknown as {captureReads:number}).captureReads)).toBe(1);
-  await capture.getByRole('button',{name:'继续滚动'}).click();
+  await expect(capture.getByRole('button',{name:'自动滚动',exact:true})).toBeVisible();
+  await expect.poll(()=>app.evaluate(()=> (globalThis as unknown as {captureReads:number}).captureReads)).toBe(2);
   await expect.poll(()=>app.evaluate(()=> (globalThis as unknown as {captureReads:number}).captureReads)).toBe(2);
   await capture.evaluate(()=>window.captureApi.scrollDone()); // screen read is still in flight, controls may be briefly hidden
   await expect.poll(captureVisible).toBe(false);
@@ -347,14 +351,15 @@ test('native automatic scrolling moves a real target window and copies the full 
   try {
     const targetPage = await target.firstWindow(); await expect(targetPage.locator('canvas')).toBeVisible();
     await target.evaluate(({BrowserWindow},bounds)=>{const w=BrowserWindow.getAllWindows()[0];w.setBounds({x:bounds.x+80,y:bounds.y+80,width:800,height:500});w.show();w.focus();},display);
+    await targetPage.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
     await page.evaluate(()=>window.settingsApi.captureScreenshot(true,'advanced'));
     const capture=app.windows().find(w=>w.url().includes('/capture/'))!;
-    await capture.evaluate(async()=>{
-      const frame=(await window.captureApi.frame())!;
-      const sx=frame.width/innerWidth,sy=frame.height/innerHeight;
-      const bytes=Uint8Array.from(atob(frame.dataUrl.split(',')[1]),c=>c.charCodeAt(0));
-      await window.captureApi.advanced({x:80*sx,y:80*sy,width:775*sx,height:480*sy},bytes,'scroll');
-    });
+    console.log('Capture geometry',await capture.evaluate(async()=>({viewport:[innerWidth,innerHeight],frame:(await window.captureApi.frame())?.height})));
+    await capture.mouse.move(80,80);await capture.mouse.down();await capture.mouse.move(855,560);await capture.mouse.up();
+    await capture.getByRole('button',{name:'滚动截图',exact:true}).click();
+    await expect(capture.getByRole('button',{name:'自动滚动',exact:true})).toBeVisible();
+    await expect.poll(async()=> (await capture.evaluate(()=>window.captureApi.frame()))?.source).toBe('window');
+    await capture.getByRole('button',{name:'自动滚动',exact:true}).click();
     await expect.poll(()=>targetPage.evaluate(()=>scrollY),{timeout:10000}).toBeGreaterThan(0);
     await expect.poll(async()=> (await page.evaluate(()=>window.settingsApi.getQuickState())).capturing,{timeout:35000}).toBe(false);
     const result=await clipboardImage();
@@ -363,6 +368,66 @@ test('native automatic scrolling moves a real target window and copies the full 
     const scale=result.size.width/775;
     expect(Math.abs(result.size.height-(480+scroll)*scale)).toBeLessThanOrEqual(4);
   } finally { await target.close(); }
+});
+test('live screenshot accepts direct wheel scrolling without moving the cursor or hiding its toolbar', async () => {
+  await backupClipboard();
+  app.process().stdout?.on('data',chunk=>{const lines=String(chunk).split('\n').filter(line=>line.startsWith('[capture]'));if(lines.length)console.log(lines.join('\n'));});
+  const display=await app.evaluate(({screen})=>screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds);
+  const target=await electron.launch({args:[resolve('tests/e2e/fixtures/scroll-target.cjs'),`--user-data-dir=${join(data,'live-target')}`],timeout:30000});
+  try {
+    const targetPage=await target.firstWindow();await expect(targetPage.locator('canvas')).toBeVisible();
+    await target.evaluate(({BrowserWindow},d)=>{const w=BrowserWindow.getAllWindows()[0];w.setBounds({x:d.x+80,y:d.y+80,width:800,height:500});w.show();w.focus();},display);
+    await targetPage.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+    await page.evaluate(()=>window.settingsApi.captureScreenshot(true,'advanced'));
+    const capture=app.windows().find(w=>w.url().includes('/capture/'))!;
+    console.log('Capture geometry',await capture.evaluate(async()=>({viewport:[innerWidth,innerHeight],frame:(await window.captureApi.frame())?.height})));
+    await capture.mouse.move(80,80);await capture.mouse.down();await capture.mouse.move(855,580);await capture.mouse.up();
+    await capture.getByRole('button',{name:'滚动截图',exact:true}).click();
+    await expect.poll(async()=> (await capture.evaluate(()=>window.captureApi.frame()))?.source).toBe('window');
+    const cursor=await app.evaluate(({screen})=>screen.getCursorScreenPoint());
+    await targetPage.mouse.move(400,200);
+    let previousFrames=1;
+    for(let i=0;i<5;i++) {
+      await targetPage.mouse.wheel(0,220);
+      await expect.poll(async()=> (await capture.evaluate(()=>window.captureApi.frame()))?.frames??0).toBeGreaterThan(previousFrames);
+      previousFrames=(await capture.evaluate(()=>window.captureApi.frame()))!.frames!;
+      expect(await captureVisible()).toBe(true);
+    }
+    expect(await app.evaluate(({screen})=>screen.getCursorScreenPoint())).toEqual(cursor);
+    expect((await capture.evaluate(()=>window.captureApi.frame()))!.automatic).toBe(false);
+    if(process.env.LOLPING_SCREENSHOT_DIR)await capture.screenshot({path:join(process.env.LOLPING_SCREENSHOT_DIR,'live-scroll-toolbar.png')});
+    await capture.getByRole('button',{name:'完成并复制'}).click();
+    await expect.poll(async()=> (await page.evaluate(()=>window.settingsApi.getQuickState())).capturing).toBe(false);
+    const result=await clipboardImage(),scroll=await targetPage.evaluate(()=>scrollY);
+    expect(Math.abs(result.size.height-(500+scroll)*result.size.width/775)).toBeLessThanOrEqual(4);
+  } finally {await target.close();}
+});
+test('native screenshot immediately after minimize contains the target rather than the settings animation', async () => {
+  await backupClipboard();
+  app.process().stdout?.on('data',chunk=>{const lines=String(chunk).split('\n').filter(line=>line.startsWith('[capture]'));if(lines.length)console.log(lines.join('\n'));});
+  const display=await app.evaluate(({screen})=>screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).bounds);
+  const target=await electron.launch({args:[resolve('tests/e2e/fixtures/scroll-target.cjs'),`--user-data-dir=${join(data,'minimize-target')}`],timeout:30000});
+  try {
+    const targetPage=await target.firstWindow();await expect(targetPage.locator('canvas')).toBeVisible();
+    await target.evaluate(({BrowserWindow},d)=>{const w=BrowserWindow.getAllWindows()[0];w.setBounds({x:d.x+80,y:d.y+80,width:800,height:500});w.show();w.focus();},display);
+    await app.evaluate(({BrowserWindow})=>{const w=BrowserWindow.getAllWindows().find(w=>w.webContents.getURL().includes('/settings/'))!;w.show();w.focus();w.minimize();});
+    const start=Date.now();await page.evaluate(()=>window.settingsApi.captureScreenshot(true,'fast'));
+    console.log('Native capture after minimize ready:',Date.now()-start,'ms');
+    const capture=app.windows().find(w=>w.url().includes('/capture/'))!;
+    await capture.evaluate(async()=>{const f=(await window.captureApi.frame())!;await window.captureApi.finish({x:120*f.width/innerWidth,y:200*f.height/innerHeight,width:200*f.width/innerWidth,height:200*f.height/innerHeight});});
+    console.log('Capture geometry after minimize',await capture.evaluate(()=>({viewport:[innerWidth,innerHeight]})));
+    const image=await clipboardImage();
+    const correlation=await targetPage.evaluate(async url=>{
+      const img=new Image();img.src=url;await img.decode();const c=document.createElement('canvas');c.width=200;c.height=200;const ctx=c.getContext('2d')!;ctx.drawImage(img,0,0,200,200);const got=ctx.getImageData(0,0,200,200).data;
+      const expected=document.querySelector('canvas')!.getContext('2d')!.getImageData(40,120,200,200).data;
+      // Compare texture rather than display-profile-dependent colour values (e.g. an Apple P3 panel).
+      let n=0,a=0,b=0,aa=0,bb=0,ab=0;
+      for(let i=0;i<got.length;i+=200){const x=0.2126*got[i]+0.7152*got[i+1]+0.0722*got[i+2],y=0.2126*expected[i]+0.7152*expected[i+1]+0.0722*expected[i+2];n++;a+=x;b+=y;aa+=x*x;bb+=y*y;ab+=x*y;}
+      return (n*ab-a*b)/Math.sqrt((n*aa-a*a)*(n*bb-b*b));
+    },image.data);
+    console.log('Minimize capture matches target texture:',correlation);
+    expect(correlation).toBeGreaterThan(0.95);
+  } finally {await target.close();}
 });
 async function freePort(): Promise<number> { const s = createSocket('udp4'); await new Promise<void>(r => s.bind(0,'127.0.0.1',r)); const port = (s.address() as {port:number}).port; await new Promise<void>(r=>s.close(r)); return port; }
 test('joined room receives only the selected mouse button while shortcuts can use the private button', async () => {

@@ -2,9 +2,10 @@ import { app, BrowserWindow, clipboard, ClipboardItem, desktopCapturer, globalSh
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { boundedCrop, type CaptureFrame, type CaptureMode, type CaptureRect } from '../shared/capture';
-import { appendScrollFrame, type BitmapFrame } from '../shared/scrollStitch';
+import { appendScrollFrame, frameDifference, type BitmapFrame } from '../shared/scrollStitch';
 import { IS_MAC, loadPage, preloadPath } from './paths';
 import { OcrService } from './ocrService';
+import { CaptureBarrier } from './captureBarrier';
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const bitmap = (image: NativeImage): BitmapFrame => ({ ...image.getSize(), pixels: image.toBitmap() });
 
@@ -17,13 +18,17 @@ export class ScreenshotTool {
   private disposed = false;
   private session = 0;
   private restore: BrowserWindow[] = [];
+  private opacity = new Map<BrowserWindow,number>();
   private focused: BrowserWindow | null = null;
   private display: Display | null = null;
   private ocr = new OcrService();
+  private barrier = new CaptureBarrier();
   private renderReady: { session: number; resolve(): void } | null = null;
   private stopKey = false;
   private panelOutside = false;
-  private scroll: { rect: CaptureRect; previous: BitmapFrame; composite: BitmapFrame; frames: number; running: boolean; paused: boolean; finishing: boolean; unchanged: number } | null = null;
+  private border: BrowserWindow | null = null;
+  private target: { window: import('node-screenshots').Window; bounds: CaptureRect; crop: CaptureRect } | null = null;
+  private scroll: { rect: CaptureRect; previous: BitmapFrame; composite: BitmapFrame; frames: number; running: boolean; automatic: boolean; paused: boolean; finishing: boolean; unchanged: number } | null = null;
   readonly folder = join(app.getPath('pictures'), 'lolPing');
   constructor(private readonly deps: { scroll(x: number, y: number, pixels: number): Promise<void>; saveFiles(): boolean; mode(): CaptureMode; onBusy(on: boolean): void; report(name: string, detail: string, ok: boolean): void }) {
     this.ipc('frame', () => this.payload);
@@ -71,13 +76,22 @@ export class ScreenshotTool {
     const started = performance.now();
     this.busy = true; this.session++; this.deps.onBusy(true);
     this.focused = BrowserWindow.getFocusedWindow();
-    this.restore = BrowserWindow.getAllWindows().filter(w => w !== this.window && w.isVisible());
-    for (const w of this.restore) w.hide();
+    if(this.focused?.isMinimized())this.focused=null;
+    const owned=BrowserWindow.getAllWindows().filter(w=>w!==this.window);
+    this.restore=owned.filter(w=>w.isVisible() && !w.isMinimized());
+    for(const w of owned) {
+      if(!w.isVisible() || w.isMinimized())continue;
+      if(IS_MAC){this.opacity.set(w,w.getOpacity());w.setOpacity(0);}
+      w.hide();
+    }
+    const hideRequestedAt=performance.now();
     try {
       this.display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-      // Window hide/minimise animations can last several compositor frames on both systems.
-      await delay(450);
+      // Ask the native compositor to confirm the hide, including an in-progress minimise.
+      await this.barrier.wait();
+      const hiddenAt=performance.now();
       this.image = await this.readScreen(this.display);
+      const capturedAt=performance.now();
       if (this.disposed) return;
       if (!region) { await this.copy(this.image); this.cleanup(); return; }
       await this.prepare();
@@ -91,7 +105,7 @@ export class ScreenshotTool {
       await ready;
       if (this.disposed || !this.busy) return;
       this.window.show(); this.window.focus();
-      console.log('[capture]', mode, 'ready in', Math.round(performance.now() - started), 'ms');
+      console.log('[capture]',mode,JSON.stringify({hide:Math.round(hiddenAt-started),hideRequest:Math.round(hideRequestedAt-started),barrier:Math.round(hiddenAt-hideRequestedAt),capture:Math.round(capturedAt-hiddenAt),render:Math.round(performance.now()-capturedAt),total:Math.round(performance.now()-started)}));
     } catch (e) { this.cleanup(); throw e; }
   }
   private async readScreen(display: Display): Promise<NativeImage> {
@@ -103,7 +117,10 @@ export class ScreenshotTool {
         if (!monitor) throw new Error('显示器未找到');
         const captured = await monitor.captureImage();
         // Electron needs a copied output buffer from napi-rs, as documented by node-screenshots.
-        const image = nativeImage.createFromBuffer(await captured.toPng(true));
+        const pixels = await captured.toRaw(true);
+        // xcap returns RGBA; Electron's bitmap input is BGRA on both supported platforms.
+        for (let i = 0; i < pixels.length; i += 4) { const r = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = r; }
+        const image = nativeImage.createFromBitmap(pixels, { width: captured.width, height: captured.height });
         if (image.isEmpty()) throw new Error('原生截屏为空');
         return image;
       } catch (error) { console.warn('[capture] native backend unavailable; using Electron:', (error as Error).message); }
@@ -126,21 +143,26 @@ export class ScreenshotTool {
       if (action === 'scroll') {
         if (crop.width < 64 || crop.height < 120) throw new Error('请框选更大的可滚动内容区域，并避开固定标题和工具栏');
         const first = bitmap(this.image.crop(crop));
-        this.scroll = { rect: crop, previous: first, composite: first, frames: 1, running: false, paused: false, finishing: false, unchanged: 0 };
+        this.scroll = { rect: crop, previous: first, composite: first, frames: 1, running: false, automatic: false, paused: false, finishing: false, unchanged: 0 };
+        await this.findScrollTarget(crop, first);
+        if (this.session !== id || !this.busy) return;
+        this.window?.hide(); this.window?.setFocusable(false);
         this.stopKey = globalShortcut.register('Escape', () => void this.scrollDone());
-        this.showPanel('scroll', '正在自动向下滚动和拼接 · Esc / 截图快捷键停止并复制');
+        this.showPanel('scroll', '在选区内直接向下滚动，停稳后自动拼接 · Esc 完成复制');
+        if (!this.target && !this.panelOutside && !(process.env.LOLPING_TEST_DATA_DIR && process.env.LOLPING_TEST_CAPTURE_BACKEND === 'electron')) throw new Error('当前窗口无法直接采集，请缩小选区给工具栏留出空间');
+        this.showBorder(crop);
         void this.autoScroll();
         return;
       }
       if (action === 'text') {
         this.showPanel('working', '正在离线识别中英文文字…首次初始化可能需要数秒');
-        const text = await this.ocr.recognize(edited.toPNG());
+        const text = await this.ocr.recognize(this.image.crop(crop).toPNG());
         if (!this.busy || this.session !== id || this.disposed) return;
         if (!text) throw new Error('未识别到文字，请重新框选清晰的文字区域');
         await clipboard.writeText(text);
         this.deps.report('文字已复制到剪贴板', `离线识别完成，共 ${text.length} 个字符`, true);
       } else await this.copy(edited);
-    } catch (e) { if (this.session === id && this.busy) this.deps.report('高级截图失败', (e as Error).message, false); }
+    } catch (e) { if (this.session === id && this.busy) { if(action==='scroll')this.scroll=null; this.deps.report('高级截图失败', (e as Error).message, false); } }
     finally { if (this.session === id && !this.scroll) this.cleanup(); }
   }
   private scrollImage(): NativeImage {
@@ -150,24 +172,25 @@ export class ScreenshotTool {
   private showPanel(stage: 'scroll' | 'working', message: string): void {
     if (!this.window || !this.display) return;
     const b = this.display.workArea;
-    let panel = { x: b.x + b.width - 430, y: b.y + b.height - 190, width: 420, height: 175 };
+    const width=stage==='scroll'?600:420,height=stage==='scroll'?80:175;
+    let panel = { x: b.x + b.width - width - 10, y: b.y + b.height - height - 10, width, height };
     this.panelOutside = false;
     if (stage === 'scroll' && this.scroll && this.image) {
       const d = this.display.bounds, r = this.scroll.rect, size = this.image.getSize();
       const area = { x: d.x + r.x * d.width / size.width, y: d.y + r.y * d.height / size.height, width: r.width * d.width / size.width, height: r.height * d.height / size.height };
-      const positions = [{x:area.x + area.width + 10,y:area.y}, {x:area.x,y:area.y + area.height + 10}, {x:area.x - 430,y:area.y}, {x:area.x,y:area.y - 185}];
-      const fit = positions.find(p => p.x >= b.x && p.y >= b.y && p.x + 420 <= b.x + b.width && p.y + 175 <= b.y + b.height);
+      const positions = [{x:area.x + area.width + 10,y:area.y}, {x:area.x,y:area.y + area.height + 10}, {x:area.x - width - 10,y:area.y}, {x:area.x,y:area.y - height - 10}];
+      const fit = positions.find(p => p.x >= b.x && p.y >= b.y && p.x + width <= b.x + b.width && p.y + height <= b.y + b.height);
       if (fit) { panel = {...panel, x:Math.round(fit.x), y:Math.round(fit.y)}; this.panelOutside = true; }
     }
     this.window.setBounds(panel);
-    this.setFrame({ dataUrl: stage === 'scroll' ? this.scrollImage().resize({ width: 70 }).toDataURL() : '', width: this.scroll?.composite.width ?? 0, height: this.scroll?.composite.height ?? 0, session: this.session, mode: 'advanced', stage, message, frames: this.scroll?.frames, paused: this.scroll?.paused, stopping: this.scroll?.finishing });
+    this.setFrame({ dataUrl: stage === 'scroll' ? this.scrollImage().resize({ width: 70 }).toDataURL() : '', width: this.scroll?.composite.width ?? 0, height: this.scroll?.composite.height ?? 0, session: this.session, mode: 'advanced', stage, message, frames: this.scroll?.frames, automatic: this.scroll?.automatic, paused: this.scroll?.paused, source: this.target ? 'window' : 'screen', stopping: this.scroll?.finishing });
     this.window.showInactive();
   }
   private toggleScroll(): void {
     const scroll = this.scroll;
     if (!scroll || scroll.finishing) return;
-    scroll.paused = !scroll.paused;
-    this.showPanel('scroll', scroll.paused ? '已暂停 · 可继续滚动，或停止并复制当前长图' : '正在自动向下滚动和拼接');
+    if (scroll.paused) { scroll.paused = false; scroll.automatic = false; } else scroll.automatic = !scroll.automatic;
+    this.showPanel('scroll', scroll.automatic ? '正在自动向下滚动 · 随时改为手动或完成复制' : '在选区内直接向下滚动，停稳后自动拼接 · Esc 完成复制');
     if (!scroll.paused && !scroll.running) void this.autoScroll();
   }
   private async scrollDone(): Promise<void> {
@@ -179,49 +202,101 @@ export class ScreenshotTool {
     catch (e) { this.deps.report('长图复制失败', (e as Error).message, false); }
     finally { this.cleanup(); }
   }
+  private async nativeBitmap(captured: import('node-screenshots').Image): Promise<NativeImage> {
+    const pixels = await captured.toRaw(true);
+    for (let i = 0; i < pixels.length; i += 4) { const r = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = r; }
+    return nativeImage.createFromBitmap(pixels, { width: captured.width, height: captured.height });
+  }
+  private regionPoints(rect: CaptureRect): CaptureRect {
+    const d = this.display!.bounds, size = this.image!.getSize();
+    const p = {x:d.x + rect.x*d.width/size.width, y:d.y + rect.y*d.height/size.height};
+    const end = {x:d.x + (rect.x+rect.width)*d.width/size.width, y:d.y + (rect.y+rect.height)*d.height/size.height};
+    const a = IS_MAC ? p : screen.dipToScreenPoint(p), b = IS_MAC ? end : screen.dipToScreenPoint(end);
+    return {x:a.x,y:a.y,width:b.x-a.x,height:b.y-a.y};
+  }
+  private async findScrollTarget(rect: CaptureRect, first: BitmapFrame): Promise<void> {
+    this.target = null;
+    if (process.env.LOLPING_TEST_DATA_DIR && process.env.LOLPING_TEST_CAPTURE_BACKEND === 'electron') return;
+    const id=this.session, area=this.regionPoints(rect);
+    const { Window } = await import('node-screenshots');
+    const windows = Window.all().filter(w => {
+      try { return w.pid() !== process.pid && !w.isMinimized() && area.x>=w.x()-1 && area.y>=w.y()-1 && area.x+area.width<=w.x()+w.width()+1 && area.y+area.height<=w.y()+w.height()+1; }
+      catch { return false; }
+    }).slice(0, 6);
+    for (const window of windows) {
+      try {
+        const bounds = {x:window.x(),y:window.y(),width:window.width(),height:window.height()};
+        const captured = await this.nativeBitmap(await window.captureImage()), size = captured.getSize();
+        const crop = boundedCrop({x:(area.x-bounds.x)*size.width/bounds.width,y:(area.y-bounds.y)*size.height/bounds.height,width:area.width*size.width/bounds.width,height:area.height*size.height/bounds.height},size.width,size.height);
+        const candidate = bitmap(captured.crop(crop).resize({width:first.width,height:first.height}));
+        let opaque=0,total=0;
+        for(let i=3;i<candidate.pixels.length;i+=4*Math.max(1,Math.floor(candidate.width*candidate.height/1000))){if(candidate.pixels[i]>=200)opaque++;total++;}
+        // Choose the first visible window covering the selection. Its contents may have changed
+        // since the frozen preview, so a colour match must not reject a real live window.
+        let colour=0,samples=0;
+        for(let i=0;i<candidate.pixels.length;i+=4*Math.max(1,Math.floor(candidate.width*candidate.height/1000))){colour+=candidate.pixels[i]+candidate.pixels[i+1]+candidate.pixels[i+2];samples+=3;}
+        const blank=colour/Math.max(1,samples)<1 && frameDifference(first,candidate)>10;
+        if (opaque/Math.max(1,total)>0.85 && !blank && this.session===id && this.busy) { this.target = {window,bounds,crop}; for(let i=3;i<candidate.pixels.length;i+=4)candidate.pixels[i]=255; if(this.scroll){this.scroll.previous=candidate;this.scroll.composite=candidate;} return; }
+      } catch { /* a monitor capture remains usable when the controls fit outside the selection */ }
+    }
+  }
+  private async readScrollFrame(rect: CaptureRect): Promise<BitmapFrame> {
+    const target = this.target;
+    if (!target) return bitmap((await this.readScreen(this.display!)).crop(rect));
+    if (target.window.isMinimized() || target.window.x()!==target.bounds.x || target.window.y()!==target.bounds.y || target.window.width()!==target.bounds.width || target.window.height()!==target.bounds.height) throw new Error('目标窗口已移动或最小化，请完成当前长图并重新框选');
+    const image = await this.nativeBitmap(await target.window.captureImage());
+    const result=bitmap(image.crop(target.crop).resize({width:rect.width,height:rect.height}));
+    for(let i=3;i<result.pixels.length;i+=4)result.pixels[i]=255;
+    return result;
+  }
+  private showBorder(rect: CaptureRect): void {
+    if (!this.display || !this.image) return;
+    const d=this.display.bounds,size=this.image.getSize();
+    const left=Math.floor(d.x+rect.x*d.width/size.width)-4, top=Math.floor(d.y+rect.y*d.height/size.height)-4;
+    const right=Math.ceil(d.x+(rect.x+rect.width)*d.width/size.width)+4,bottom=Math.ceil(d.y+(rect.y+rect.height)*d.height/size.height)+4;
+    const win=new BrowserWindow({x:left,y:top,width:right-left,height:bottom-top,frame:false,transparent:true,backgroundColor:'#00000000',show:false,focusable:false,skipTaskbar:true,resizable:false,movable:false,webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false}});
+    this.border=win; win.setAlwaysOnTop(true,'screen-saver'); win.setIgnoreMouseEvents(true);
+    if(IS_MAC) win.setVisibleOnAllWorkspaces(true,{visibleOnFullScreen:true});
+    void win.loadURL('data:text/html,'+encodeURIComponent(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>html,body{margin:0;width:100%;height:100%;box-sizing:border-box}body{border:2px solid #07c160}</style>`)).then(()=>{if(this.border===win && !win.isDestroyed())win.showInactive();}).catch(()=>undefined);
+  }
   private async autoScroll(): Promise<void> {
     const scroll = this.scroll, display = this.display, id = this.session;
     if (!scroll || !display || scroll.running || scroll.finishing) return;
     scroll.running = true;
     const active = () => this.session === id && this.scroll === scroll && !scroll.finishing && !scroll.paused && !this.disposed;
     const began = Date.now();
+    let candidate: BitmapFrame | null = null, stableSince = 0, wheelAt = 0;
     try {
-      // Leave time to restore the target window after dismissing the full-screen editor.
-      await delay(500);
       while (active()) {
-        if (!this.panelOutside) this.window?.hide();
-        await delay(160);
-        if (!active()) break;
-        const size = this.image!.getSize();
-        const point = { x: Math.round(display.bounds.x + (scroll.rect.x + scroll.rect.width / 2) * display.bounds.width / size.width), y: Math.round(display.bounds.y + (scroll.rect.y + scroll.rect.height / 2) * display.bounds.height / size.height) };
-        const nativePoint = IS_MAC ? point : screen.dipToScreenPoint(point);
-        if (!(process.env.LOLPING_TEST_DATA_DIR && process.env.LOLPING_TEST_CAPTURE_BACKEND === 'electron')) {
-          await this.deps.scroll(nativePoint.x, nativePoint.y, Math.min(240, Math.max(24, Math.round(scroll.rect.height * display.bounds.height / size.height * 0.35))));
+        if (scroll.automatic && wheelAt===0) {
+          const area=this.regionPoints(scroll.rect);
+          if (!(process.env.LOLPING_TEST_DATA_DIR && process.env.LOLPING_TEST_CAPTURE_BACKEND === 'electron')) await this.deps.scroll(Math.round(area.x+area.width/2), Math.round(area.y+area.height/2), Math.min(180,Math.max(24,Math.round(scroll.rect.height*display.bounds.height/this.image!.getSize().height*0.3))));
+          wheelAt=Date.now(); candidate=null;
         }
-        await delay(450); // allow smooth scrolling and newly exposed content to settle
+        await delay(scroll.automatic ? 200 : 100);
         if (!active()) break;
-        const current = await this.readScreen(display);
+        const next = await this.readScrollFrame(scroll.rect);
         if (!active()) break;
-        const nextSize = current.getSize();
-        if (size.width !== nextSize.width || size.height !== nextSize.height) throw new Error('显示器尺寸变化，请重新截图');
-        const next = bitmap(current.crop(scroll.rect));
-        const merged = appendScrollFrame(scroll.composite, scroll.previous, next);
-        const changed = merged !== scroll.composite;
-        scroll.composite = merged;
-        if (changed) { scroll.previous = next; scroll.frames++; scroll.unchanged = 0; }
-        else scroll.unchanged++;
-        if (scroll.unchanged >= 3) { await this.scrollDone(); return; }
-        this.showPanel('scroll', changed ? '正在自动滚动和拼接 · Esc / 截图快捷键停止并复制' : '正在确认是否已到底…');
-        if (Date.now() - began > 120000 || scroll.frames >= 150) throw new Error('已达到本次滚动上限，可停止并复制当前长图');
-        await delay(250); // keep the stop/pause controls available between frames
+        if (!candidate || frameDifference(candidate,next)>0.6) { candidate=next; stableSince=Date.now(); continue; }
+        if (Date.now()-stableSince<100) continue;
+        if (scroll.automatic && Date.now()-wheelAt<400) continue;
+        const merged=appendScrollFrame(scroll.composite,scroll.previous,next);
+        const changed=merged!==scroll.composite;
+        if(changed) {
+          scroll.composite=merged;scroll.previous=next;scroll.frames++;scroll.unchanged=0;
+          this.showPanel('scroll',scroll.automatic ? '正在自动滚动和拼接 · Esc 完成复制' : '已拼接 · 在选区内继续向下滚动，或完成复制');
+        } else if(scroll.automatic) {
+          scroll.unchanged++;
+          if(scroll.unchanged>=3){await this.scrollDone();return;}
+        }
+        if(scroll.automatic){wheelAt=0;candidate=null;await delay(100);}
+        if(Date.now()-began>120000 || scroll.frames>=150) {await this.scrollDone();return;}
       }
-    } catch (e) {
-      if (this.session === id && !scroll.finishing) { scroll.paused = true; this.showPanel('scroll', `${(e as Error).message}；已保留当前长图，可停止并复制`); }
+    } catch(e) {
+      if(this.session===id && !scroll.finishing){scroll.paused=true;scroll.automatic=false;this.showPanel('scroll',`${(e as Error).message}；已保留当前长图`);}
     } finally {
-      scroll.running = false;
-      if (this.session === id && scroll.paused && !scroll.finishing) this.showPanel('scroll', this.payload?.message ?? '已暂停');
-      // A quick pause/resume while a frame was pending should restart exactly one loop.
-      if (active()) void this.autoScroll();
+      scroll.running=false;
+      if(active())void this.autoScroll();
     }
   }
   private async copy(image: NativeImage): Promise<void> {
@@ -237,8 +312,13 @@ export class ScreenshotTool {
   private cleanup(): void {
     this.renderReady?.resolve(); this.renderReady = null;
     if (this.stopKey) { globalShortcut.unregister('Escape'); this.stopKey = false; }
+    this.target=null;
+    const border=this.border; this.border=null; if(border && !border.isDestroyed())border.destroy();
+    if(this.window && !this.window.isDestroyed())this.window.setFocusable(true);
     this.session++; this.image = null; this.scroll = null; this.busy = false; this.display = null;
     if (this.window && !this.window.isDestroyed()) { this.window.hide(); this.setFrame(null); }
+    for(const [w,opacity] of this.opacity)if(!w.isDestroyed())w.setOpacity(opacity);
+    this.opacity.clear();
     if (!this.disposed) {
       for (const w of this.restore) if (!w.isDestroyed()) w.showInactive();
       if (this.focused && !this.focused.isDestroyed()) { this.focused.show(); this.focused.focus(); }
@@ -247,7 +327,7 @@ export class ScreenshotTool {
     this.restore = []; this.focused = null;
   }
   dispose(): void {
-    this.disposed = true; this.cleanup(); this.ocr.dispose();
+    this.disposed = true; this.cleanup(); this.ocr.dispose(); this.barrier.dispose();
     const win = this.window; this.window = null; if (win && !win.isDestroyed()) win.destroy();
     for (const name of ['frame', 'ready', 'finish', 'advanced', 'scrollNext', 'scrollDone']) ipcMain.removeHandler(`capture:${name}`);
   }
