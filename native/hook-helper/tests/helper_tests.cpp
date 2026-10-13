@@ -909,7 +909,29 @@ static void test_mac_option_drag_through_transitions() {
   CHECK(findEmit(r, Emit::Kind::WheelOpen) != nullptr);
 }
 
+static void test_right_ping_gesture_and_left_cancel() {
+  Decision d;
+  Config cfg; cfg.rightPing = true; d.setConfig(cfg);
+  CHECK(!d.onEvent(md(Btn::Right, 100, 100)).swallow); // normal context menu
+  d.onEvent(mu(Btn::Right, 100, 100));
+  d.onEvent(kd(ALT));
+  CHECK(d.onEvent(md(Btn::Right, 100, 100)).swallow);
+  const auto move = d.onEvent(mv(100, 240));
+  const auto* opened = findEmit(move, Emit::Kind::WheelOpen);
+  CHECK(opened != nullptr && opened->button == Btn::Right);
+  const auto release = d.onEvent(mu(Btn::Right, 100, 240));
+  const auto* ping = findEmit(release, Emit::Kind::WheelRelease);
+  CHECK(ping != nullptr && ping->button == Btn::Right);
+  CHECK(formatEmit(*ping).find("\"button\":\"right\"") != std::string::npos);
+  d.onEvent(ku(ALT));
+  d.onEvent(kd(ALT)); d.onEvent(md(Btn::Left, 100, 100)); d.onEvent(mv(100, 240));
+  const auto cancel = d.onEvent(md(Btn::Right, 100, 240));
+  CHECK(findEmit(cancel, Emit::Kind::Cancel) != nullptr); // original right-click cancels left drag
+  CHECK(parseCommand("{\"type\":\"config\",\"rightPing\":true}", Config{}).config.rightPing);
+}
+
 int main() {
+  test_right_ping_gesture_and_left_cancel();
   test_json_parses_flat_objects();
   test_json_rejects_bad_input();
   test_json_escape();

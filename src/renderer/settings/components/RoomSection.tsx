@@ -1,9 +1,10 @@
-import { Button, Input, Slider, Spinner } from '@fluentui/react-components';
+import { Button, Input, Select, Slider, Spinner } from '@fluentui/react-components';
 import {
   ArrowSync24Regular, Color24Regular, Desktop24Regular, Globe24Regular, Person24Regular, PeopleCommunity24Regular,
   SpeakerMute24Regular, TopSpeed24Regular, Warning24Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useRef, useState } from 'react';
+import type { RoomButtonScope } from '../../../shared/mouseButtons';
 import type { RoomMember, RoomState } from '../../../shared/room';
 import { TAG_COLORS } from '../../../shared/roomColors';
 import { clampNameInput } from '../../../shared/roomProtocol';
@@ -168,6 +169,9 @@ export function RoomSection({ settings: s, update }: { settings: Settings; updat
   if (!room) return null;
   return (
     <>
+      <SettingRow icon={<PeopleCommunity24Regular />} title="哪些标记同步到房间" description="按住信号触发键，用左键或右键拖动选择标记。未选中的鼠标键只在本机显示，不影响其他成员；默认左右键都同步。">
+        <Select aria-label="房间标记同步范围" value={s.roomSyncButton} onChange={(_, d) => void update({ roomSyncButton: d.value as RoomButtonScope })}><option value="both">左右键都同步（默认）</option><option value="left">仅左键同步，右键留在本机</option><option value="right">仅右键同步，左键留在本机</option><option value="none">所有标记仅在本机显示</option></Select>
+      </SettingRow>
       <NameRow value={s.displayName} onSave={(displayName) => void update({ displayName })} />
       <SettingRow icon={<Color24Regular />} title={t.roomColor}>
         <div className="swatches" role="radiogroup" aria-label={t.roomColor}>

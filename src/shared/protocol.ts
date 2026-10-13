@@ -1,3 +1,4 @@
+import type { MarkerButton } from './mouseButtons';
 import type { Settings } from './settings';
 
 /** Which wheel a gesture belongs to: the ping trigger's or the emote key's. */
@@ -9,7 +10,7 @@ export type WheelKind = 'ping' | 'emote';
  */
 export type HelperEvent =
   | { type: 'ready'; version: number }
-  | { type: 'wheelOpen' | 'wheelMove' | 'wheelRelease' | 'click'; x: number; y: number; wheel: WheelKind }
+  | { type: 'wheelOpen' | 'wheelMove' | 'wheelRelease' | 'click'; x: number; y: number; wheel: WheelKind; button?: MarkerButton }
   | { type: 'cancel' }
   | { type: 'toggled'; enabled: boolean }
   | { type: 'error'; message: string; code?: string }
@@ -51,7 +52,7 @@ export function parseHelperLine(line: string): HelperEvent | null {
     default:
       if (typeof o.type === 'string' && POINT_TYPES.has(o.type) && isInt(o.x) && isInt(o.y)) {
         // Anything but "emote" (including no field, from a version 1 helper) is the ping wheel.
-        return { type: o.type as PointType, x: o.x, y: o.y, wheel: o.wheel === 'emote' ? 'emote' : 'ping' };
+        return { type: o.type as PointType, x: o.x, y: o.y, wheel: o.wheel === 'emote' ? 'emote' : 'ping', ...(o.button === 'right' ? { button: 'right' as const } : {}) };
       }
       return null;
   }
@@ -66,6 +67,7 @@ export type HelperCommand =
       trigger: HelperTrigger;
       triggerVk: number;
       clickPing: boolean;
+      rightPing?: boolean;
       /** Fullscreen apps keep every click: no wheel gestures while one is in front. */
       gameCheck: boolean;
       /** 'off': no emote key, so no emote gestures. */
@@ -89,6 +91,7 @@ export function configCommand(s: Settings, enabled: boolean): HelperCommand {
     trigger: typeof t === 'object' ? 'vk' : t,
     triggerVk: typeof t === 'object' ? t.vk : 0,
     clickPing: s.clickPing,
+    rightPing: true,
     gameCheck: s.gameCheck,
     emoteTrigger: typeof e === 'object' ? 'vk' : e,
     emoteTriggerVk: typeof e === 'object' ? e.vk : 0,

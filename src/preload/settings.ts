@@ -12,7 +12,7 @@ const api: SettingsApi = {
   getQuickState: () => ipcRenderer.invoke('quick:get'),
   onQuickState: cb => subscribe('quick:changed', cb),
   pickQuickApp: () => ipcRenderer.invoke('quick:pickApp'),
-  captureScreenshot: region => ipcRenderer.invoke('quick:capture', region),
+  captureScreenshot: (region, mode) => ipcRenderer.invoke('quick:capture', region, mode),
   openScreenshotFolder: () => ipcRenderer.invoke('quick:folder'),
   clearQuickHistory: () => ipcRenderer.invoke('quick:clear'),
   // Inlined rather than imported: a sandboxed preload can't require a shared chunk.

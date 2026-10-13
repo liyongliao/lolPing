@@ -84,11 +84,11 @@ window.overlay.on('wheel:release', (p) => {
   if (!chosen) return;
   if (p.wheel === 'emote') {
     emote('self', localArt(chosen.key), chosen.x, chosen.y);
-    window.overlay.reportEmote(chosen.key, chosen.x, chosen.y);
+    window.overlay.reportEmote(chosen.key, chosen.x, chosen.y, p.button);
   } else {
     const def = pingById(chosen.key) ?? fallbackPing;
     ping(def, chosen.x, chosen.y);
-    window.overlay.reportPing(def.id, chosen.x, chosen.y);
+    window.overlay.reportPing(def.id, chosen.x, chosen.y, p.button);
   }
 });
 window.overlay.on('wheel:cancel', () => {

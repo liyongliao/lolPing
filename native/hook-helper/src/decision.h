@@ -34,6 +34,7 @@ struct Config {
   Trigger trigger = Trigger::Alt;  // the ping wheel's
   uint32_t triggerVk = 0;          // only for Trigger::CustomVk
   bool clickPing = false;
+  bool rightPing = false;  // Opt-in right-button ping gesture; ordinary right-click remains untouched.
   // Fullscreen apps (games) keep every click. Off here so a config without the field changes nothing;
   // the app's setting defaults it on.
   bool gameCheck = false;
@@ -52,6 +53,7 @@ struct Emit {
   int y = 0;
   WheelKind wheel = WheelKind::Ping;  // point events only: the wheel whose trigger started the gesture
   bool enabled = false;               // Toggled only
+  Btn button = Btn::Left;              // Which button started the ping gesture
 };
 
 enum class InjectKind { ButtonDown, ButtonUp, KeyDown, KeyUp };

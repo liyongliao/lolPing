@@ -1,3 +1,4 @@
+import { scopeAllows, type ButtonScope, type MarkerButton } from './mouseButtons';
 import { hotkeyToAccelerator, type Hotkey } from './keys';
 import type { Platform } from './platform';
 import { isPingId, type PingId } from './pings';
@@ -16,11 +17,14 @@ export interface QuickRule {
   cooldownMs: number;
   enabled: boolean;
   action: QuickAction;
+  button?: ButtonScope;
 }
 export interface QuickActionsSettings {
   enabled: boolean;
   screenshotShortcut: string;
   saveScreenshots: boolean;
+  screenshotMode: 'fast' | 'advanced';
+  historyLimit: number;
   rules: QuickRule[];
 }
 export interface QuickActivity { id: string; time: number; name: string; detail: string; ok: boolean }
@@ -29,6 +33,8 @@ export const DEFAULT_QUICK_ACTIONS: QuickActionsSettings = {
   enabled: true,
   screenshotShortcut: 'CommandOrControl+Shift+2',
   saveScreenshots: false,
+  screenshotMode: 'fast',
+  historyLimit: 3,
   rules: [
     { id: 'assist-app', name: '协助三次，打开应用', ping: 'assist', count: 3, intervalMs: 2500, cooldownMs: 5000, enabled: false, action: { type: 'app', target: '' } },
     { id: 'missing-app', name: '问号两次，打开应用', ping: 'missing', count: 2, intervalMs: 2500, cooldownMs: 5000, enabled: false, action: { type: 'app', target: '' } },
@@ -53,11 +59,14 @@ export function actionError(a: unknown, enabled = true): string | null {
 export function quickSettingsError(raw: unknown): string | null {
   if (!obj(raw) || typeof raw.enabled !== 'boolean' || typeof raw.saveScreenshots !== 'boolean' || !Array.isArray(raw.rules)) return '快捷动作配置无效';
   if (!validScreenshotShortcut(raw.screenshotShortcut)) return '快捷键需包含 Ctrl、Alt 或 Command；例如 CommandOrControl+Shift+2';
+  if (raw.screenshotMode !== undefined && !['fast', 'advanced'].includes(String(raw.screenshotMode))) return '截图模式无效';
+  if (raw.historyLimit !== undefined && !integer(raw.historyLimit, 1, 10)) return '最近记录数量需为 1–10';
   if (raw.rules.length > 50) return '最多保存 50 条规则';
   const ids = new Set<string>();
   for (const rule of raw.rules) {
     if (!obj(rule) || typeof rule.id !== 'string' || !rule.id || rule.id.length > 100 || ids.has(rule.id)) return '规则标识无效或重复';
     ids.add(rule.id);
+    if (rule.button !== undefined && !['left', 'right', 'both'].includes(String(rule.button))) return '请选择快捷规则生效的鼠标键';
     if (typeof rule.name !== 'string' || !rule.name.trim() || rule.name.length > 60 || !isPingId(rule.ping) || typeof rule.enabled !== 'boolean') return '请输入有效的规则名称和信号';
     if (!integer(rule.count, 1, 10) || !integer(rule.intervalMs, 500, 10000) || !integer(rule.cooldownMs, 1000, 60000)) return '次数需为 1–10；间隔为 0.5–10 秒；冷却为 1–60 秒';
     const error = actionError(rule.action, rule.enabled);
@@ -70,25 +79,29 @@ export function normalizeQuickActions(raw: unknown): QuickActionsSettings {
   if (quickSettingsError(raw)) return structuredClone(DEFAULT_QUICK_ACTIONS);
   const value = raw as QuickActionsSettings;
   return {
+    screenshotMode: value.screenshotMode ?? 'fast', historyLimit: value.historyLimit ?? 3,
     enabled: value.enabled, screenshotShortcut: value.screenshotShortcut, saveScreenshots: value.saveScreenshots,
-    rules: value.rules.map(r => ({ id: r.id, name: r.name.trim(), ping: r.ping, count: r.count, intervalMs: r.intervalMs, cooldownMs: r.cooldownMs, enabled: r.enabled, action: r.action.type === 'screenshot' ? { type: 'screenshot', region: r.action.region } : { type: r.action.type, target: r.action.target } })),
+    rules: value.rules.map(r => ({ id: r.id, name: r.name.trim(), ping: r.ping, count: r.count, intervalMs: r.intervalMs, cooldownMs: r.cooldownMs, enabled: r.enabled, ...(r.button ? { button: r.button } : {}), action: r.action.type === 'screenshot' ? { type: 'screenshot', region: r.action.region } : { type: r.action.type, target: r.action.target } })),
   };
 }
 /** Only the caller's local, committed pings enter this engine. Preview and room events have no route here. */
 export class QuickRuleEngine {
+  private fired = new Map<string, number>();
   private states = new Map<string, { count: number; last: number; fired: number }>();
-  reset(): void { this.states.clear(); }
+  reset(): void { this.states.clear(); this.fired.clear(); }
   breakSequence(): void { for (const s of this.states.values()) s.count = 0; }
-  accept(ping: PingId, config: QuickActionsSettings, now = Date.now()): QuickRule[] {
+  accept(ping: PingId, config: QuickActionsSettings, now = Date.now(), button: MarkerButton = 'left'): QuickRule[] {
     if (!config.enabled) { this.reset(); return []; }
     const matches: QuickRule[] = [];
     for (const rule of config.rules) {
-      if (!rule.enabled) { this.states.delete(rule.id); continue; }
-      const s = this.states.get(rule.id) ?? { count: 0, last: -Infinity, fired: -Infinity };
-      if (rule.ping !== ping || now - s.fired < rule.cooldownMs) { this.states.set(rule.id, { ...s, count: 0 }); continue; }
+      if (!rule.enabled) { this.states.delete(`${rule.id}:left`); this.states.delete(`${rule.id}:right`); continue; }
+      const key = `${rule.id}:${button}`;
+      if (!scopeAllows(rule.button ?? 'both', button)) continue;
+      const s = this.states.get(key) ?? { count: 0, last: -Infinity, fired: -Infinity };
+      if (rule.ping !== ping || now - (this.fired.get(rule.id) ?? -Infinity) < rule.cooldownMs) { this.states.set(key, { ...s, count: 0 }); continue; }
       const count = now - s.last <= rule.intervalMs ? s.count + 1 : 1;
-      if (count >= rule.count) { matches.push(rule); this.states.set(rule.id, { count: 0, last: now, fired: now }); }
-      else this.states.set(rule.id, { ...s, count, last: now });
+      if (count >= rule.count) { matches.push(rule); this.fired.set(rule.id, now); this.states.set(key, { count: 0, last: now, fired: now }); }
+      else this.states.set(key, { ...s, count, last: now });
     }
     return matches;
   }

@@ -1,3 +1,4 @@
+import type { RoomButtonScope } from './mouseButtons';
 import { DEFAULT_QUICK_ACTIONS, normalizeQuickActions, type QuickActionsSettings } from './quickActions';
 import { DEFAULT_CLICK_EMOTE, DEFAULT_EMOTE_WHEEL } from './emoteCatalog';
 import {
@@ -57,6 +58,7 @@ export interface Settings {
   /** Canonical code of the room to rejoin on launch. */
   lastRoomCode: string | null;
   roomMuted: boolean;
+  roomSyncButton: RoomButtonScope;
   /** Held with a click-drag to open the emote wheel; 'off' turns the emote wheel off. Never the same key as `trigger`, and a custom key or Caps Lock is never the pause shortcut's key either. */
   emoteTrigger: EmoteTriggerKey;
   /** The emote key + click places `clickEmoteId`, like clickPing does for pings. */
@@ -105,6 +107,7 @@ export const DEFAULT_SETTINGS: Settings = {
   rejoinRoom: true,
   lastRoomCode: null,
   roomMuted: false,
+  roomSyncButton: 'both',
   emoteTrigger: 'ctrl',
   emoteClick: false,
   emoteWheel: [...DEFAULT_EMOTE_WHEEL],
@@ -244,6 +247,7 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
     rejoinRoom: bool(r.rejoinRoom, 'rejoinRoom'),
     lastRoomCode: roomCode(r.lastRoomCode),
     roomMuted: bool(r.roomMuted, 'roomMuted'),
+    roomSyncButton: ['left', 'right', 'both', 'none'].includes(String(r.roomSyncButton)) ? r.roomSyncButton as RoomButtonScope : 'both',
     emoteTrigger: triggersClash(pingTrigger, emote, toggleHotkey) ? 'off' : emote,
     emoteClick: bool(r.emoteClick, 'emoteClick'),
     emoteWheel: normalizeEmoteWheel(r.emoteWheel, custom),

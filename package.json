@@ -1,7 +1,7 @@
 {
   "name": "lolping",
   "productName": "lolPing",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "private": true,
   "description": "League of Legends style ping wheel for your Windows and macOS desktop",
   "author": "Danrui Meng (https://github.com/darrenprx)",
@@ -45,6 +45,7 @@
     "esbuild": "0.25.12",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-screenshots": "0.5.22",
     "typescript": "5.9.3",
     "vite": "7.3.6",
     "vitest": "5.0.3",
@@ -60,7 +61,8 @@
     "files": [
       "out/**/*",
       "package.json",
-      "LICENSE"
+      "LICENSE",
+      "docs/licenses/**/*"
     ],
     "win": {
       "target": [
@@ -128,6 +130,15 @@
         "owner": "liyongliao",
         "repo": "lolPing"
       }
+    ],
+    "asarUnpack": [
+      "node_modules/**/*"
     ]
+  },
+  "dependencies": {
+    "@tesseract.js-data/chi_sim": "1.0.0",
+    "@tesseract.js-data/eng": "1.0.0",
+    "node-screenshots": "0.2.8",
+    "tesseract.js": "7.0.0"
   }
 }

@@ -1,3 +1,4 @@
+import { type MarkerButton } from '../shared/mouseButtons';
 import { BrowserWindow, ipcMain, screen, type Display, type WebContents } from 'electron';
 import { EventEmitter } from 'node:events';
 import { isEmoteRefShape, type EmoteArt, type EmoteRef } from '../shared/emotes';
@@ -13,6 +14,7 @@ import { IS_MAC, loadPage, preloadPath } from './paths';
 
 /** A ping the user just placed, in overlay-local CSS px: the room shares these. */
 export interface SharedPing {
+  button?: MarkerButton;
   id: PingId;
   displayId: number;
   x: number;
@@ -21,6 +23,7 @@ export interface SharedPing {
 
 /** An emote the user just placed, in overlay-local CSS px: the room shares these. */
 export interface SharedEmote {
+  button?: MarkerButton;
   ref: EmoteRef;
   displayId: number;
   x: number;
@@ -53,17 +56,17 @@ export class OverlayManager extends EventEmitter {
       for (const m of missing) if (typeof m === 'string') this.missingAssets.add(m);
     });
     ipcMain.on(OVERLAY_PINGED, (event, raw: unknown) => {
-      const p = raw as { id?: unknown; x?: unknown; y?: unknown } | null;
+      const p = raw as { id?: unknown; x?: unknown; y?: unknown; button?: unknown } | null;
       if (!p || !isPingId(p.id) || !isNum(p.x) || !isNum(p.y)) return;
       const displayId = this.displayOf(event.sender);
-      if (displayId !== undefined) this.emit('shared', { id: p.id, displayId, x: p.x, y: p.y } satisfies SharedPing);
+      if (displayId !== undefined) this.emit('shared', { id: p.id, displayId, x: p.x, y: p.y, ...(p.button === 'right' ? { button: 'right' as const } : {}) } satisfies SharedPing);
     });
     ipcMain.on(OVERLAY_EMOTED, (event, raw: unknown) => {
-      const p = raw as { ref?: unknown; x?: unknown; y?: unknown } | null;
+      const p = raw as { ref?: unknown; x?: unknown; y?: unknown; button?: unknown } | null;
       if (!p || !isEmoteRefShape(p.ref) || !isNum(p.x) || !isNum(p.y)) return;
       const displayId = this.displayOf(event.sender);
       if (displayId === undefined) return;
-      this.emit('sharedEmote', { ref: p.ref, displayId, x: p.x, y: p.y } satisfies SharedEmote);
+      this.emit('sharedEmote', { ref: p.ref, displayId, x: p.x, y: p.y, ...(p.button === 'right' ? { button: 'right' as const } : {}) } satisfies SharedEmote);
       // The wheel's own overlay already shows it. Another display may still hold an earlier one of ours.
       this.clearElsewhere(displayId, 'self');
     });
@@ -85,7 +88,7 @@ export class OverlayManager extends EventEmitter {
         if (!p) return;
         this.wheelDisplay = p.displayId;
         this.wheelKind = ev.wheel;
-        this.send(p.displayId, 'wheel:open', { x: p.x, y: p.y, wheel: ev.wheel });
+        this.send(p.displayId, 'wheel:open', { x: p.x, y: p.y, wheel: ev.wheel, ...(ev.button === 'right' ? { button: 'right' as const } : {}) });
         break;
       }
       case 'wheelMove':
@@ -93,7 +96,7 @@ export class OverlayManager extends EventEmitter {
         if (this.wheelDisplay === null) return;
         const p = physicalToLocal(ev.x, ev.y, this.maps, this.wheelDisplay);
         if (!p) return;
-        this.send(p.displayId, ev.type === 'wheelMove' ? 'wheel:move' : 'wheel:release', { x: p.x, y: p.y, wheel: this.wheelKind });
+        this.send(p.displayId, ev.type === 'wheelMove' ? 'wheel:move' : 'wheel:release', { x: p.x, y: p.y, wheel: this.wheelKind, ...(ev.button === 'right' ? { button: 'right' as const } : {}) });
         if (ev.type === 'wheelRelease') this.wheelDisplay = null;
         break;
       }
@@ -104,11 +107,11 @@ export class OverlayManager extends EventEmitter {
           const ref = this.settings.clickEmoteId;
           this.send(p.displayId, 'emote:spawn', { owner: 'self', art: this.resolveArt(ref, false), x: p.x, y: p.y });
           this.clearElsewhere(p.displayId, 'self');
-          this.emit('sharedEmote', { ref, displayId: p.displayId, x: p.x, y: p.y } satisfies SharedEmote);
+          this.emit('sharedEmote', { ref, displayId: p.displayId, x: p.x, y: p.y, ...(ev.button === 'right' ? { button: 'right' as const } : {}) } satisfies SharedEmote);
           break;
         }
         this.send(p.displayId, 'ping:spawn', { id: this.settings.clickPingId, x: p.x, y: p.y });
-        this.emit('shared', { id: this.settings.clickPingId, displayId: p.displayId, x: p.x, y: p.y } satisfies SharedPing);
+        this.emit('shared', { id: this.settings.clickPingId, displayId: p.displayId, x: p.x, y: p.y, ...(ev.button === 'right' ? { button: 'right' as const } : {}) } satisfies SharedPing);
         break;
       }
       case 'cancel':

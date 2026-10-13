@@ -2,3 +2,5 @@
 
 [data-platform="mac"] .qa-section>.card:not(.qa-rule){border-radius:10px;margin-bottom:6px}[data-platform="mac"] .qa-heading+.qa-rule{border-top-left-radius:10px;border-top-right-radius:10px}[data-platform="mac"] .qa-rule:has(+ :not(.qa-rule)){border-bottom-left-radius:10px;border-bottom-right-radius:10px}
 .qa-dialog{box-sizing:border-box;padding:24px!important}.qa-dialog .fui-DialogBody{display:flex;flex-direction:column;min-height:0;max-height:calc(100vh - 88px)}.qa-dialog .fui-DialogTitle{flex-shrink:0}.qa-dialog .fui-DialogContent{min-height:0;overflow-y:auto}.qa-dialog .fui-DialogActions{flex-shrink:0;width:100%;max-width:none;box-sizing:border-box;margin-top:12px}
+
+.qa-records{margin-top:20px}.qa-records summary{cursor:pointer;font-size:13px;font-weight:500;padding:12px 4px}.qa-records .qa-history{max-height:260px;overflow:auto}.qa-records .qa-heading{margin-top:8px}

@@ -31,11 +31,12 @@ uint32_t modBit(uint32_t vk) {
   }
 }
 
-Emit point(Emit::Kind k, int x, int y, WheelKind w) {
+Emit point(Emit::Kind k, int x, int y, WheelKind w, Btn button = Btn::Left) {
   Emit e{k};
   e.x = x;
   e.y = y;
   e.wheel = w;
+  e.button = button;
   return e;
 }
 
@@ -115,7 +116,8 @@ Btn Decision::dragButton(WheelKind k) const {
 
 // A press starts a gesture for this wheel: its side button, or the left button while its key is held.
 bool Decision::startsGesture(WheelKind k, Btn btn) const {
-  return btn == dragButton(k) && (isMouseTrigger(k) || held(k));
+  const bool rightPing = k == WheelKind::Ping && cfg_.rightPing && !isMouseTrigger(k) && btn == Btn::Right;
+  return (btn == dragButton(k) || rightPing) && (isMouseTrigger(k) || held(k));
 }
 
 // Something was swallowed while Alt or Win is held: their key-up must be masked,
@@ -267,7 +269,7 @@ void Decision::onKeyUp(const InputEvent& e, Result& r) {
   if (!triggerReleased) return;
   if (state_ == State::Pending) {
     if (clickOn(owner_)) {
-      r.emits.push_back(point(Emit::Kind::Click, px_, py_, owner_));
+      r.emits.push_back(point(Emit::Kind::Click, px_, py_, owner_, dragBtn_));
       state_ = State::SwallowUp;
     } else {
       // Plain click: re-press now; the real button-up will pass through.
@@ -322,13 +324,13 @@ void Decision::onMouseUp(const InputEvent& e, Result& r) {
   r.swallow = true;
   if (state_ == State::Pending) {
     if (clickOn(owner_)) {
-      r.emits.push_back(point(Emit::Kind::Click, px_, py_, owner_));
+      r.emits.push_back(point(Emit::Kind::Click, px_, py_, owner_, dragBtn_));
     } else {
       r.injects.push_back({InjectKind::ButtonDown, dragBtn_});
       r.injects.push_back({InjectKind::ButtonUp, dragBtn_});
     }
   } else if (state_ == State::Wheel) {
-    r.emits.push_back(point(Emit::Kind::WheelRelease, e.x, e.y, owner_));
+    r.emits.push_back(point(Emit::Kind::WheelRelease, e.x, e.y, owner_, dragBtn_));
   }
   state_ = State::Idle;
 }
@@ -338,11 +340,11 @@ void Decision::onMouseMove(const InputEvent& e, Result& r) {
     const double dist = std::hypot(static_cast<double>(e.x - px_), static_cast<double>(e.y - py_));
     if (dist > cfg_.dragThresholdPx) {
       state_ = State::Wheel;
-      r.emits.push_back(point(Emit::Kind::WheelOpen, px_, py_, owner_));
-      r.emits.push_back(point(Emit::Kind::WheelMove, e.x, e.y, owner_));
+      r.emits.push_back(point(Emit::Kind::WheelOpen, px_, py_, owner_, dragBtn_));
+      r.emits.push_back(point(Emit::Kind::WheelMove, e.x, e.y, owner_, dragBtn_));
     }
   } else if (state_ == State::Wheel) {
-    r.emits.push_back(point(Emit::Kind::WheelMove, e.x, e.y, owner_));
+    r.emits.push_back(point(Emit::Kind::WheelMove, e.x, e.y, owner_, dragBtn_));
   }
 }
 

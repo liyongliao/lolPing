@@ -1,3 +1,4 @@
+import { markerButton } from '../shared/mouseButtons';
 import { clipboard, dialog, globalShortcut, shell, type IpcMainInvokeEvent, ipcMain } from 'electron';
 import { spawn } from 'node:child_process';
 import { stat, access, mkdir } from 'node:fs/promises';
@@ -35,7 +36,7 @@ export class QuickActions {
   private disposed = false;
   private screenshot: ScreenshotTool;
   constructor(private readonly deps: { settings(): QuickActionsSettings; enabled(): boolean; suspend(on: boolean): void; toast(title: string, body: string): void }) {
-    this.screenshot = new ScreenshotTool({ saveFiles: () => deps.settings().saveScreenshots, onBusy: on => { this.capturing = on; this.engine.breakSequence(); deps.suspend(on); this.broadcast(); }, report: (name, detail, ok) => this.report(name, detail, ok) });
+    this.screenshot = new ScreenshotTool({ saveFiles: () => deps.settings().saveScreenshots, mode: () => deps.settings().screenshotMode, onBusy: on => { this.capturing = on; this.engine.breakSequence(); deps.suspend(on); this.broadcast(); }, report: (name, detail, ok) => this.report(name, detail, ok) });
     this.register(deps.settings().screenshotShortcut);
     this.ipc('quick:get', () => this.state());
     this.ipc('quick:pickApp', async () => {
@@ -43,15 +44,15 @@ export class QuickActions {
       const result = await dialog.showOpenDialog(win, { title: '选择要打开的应用', properties: ['openFile'], filters: [{ name: '应用程序', extensions: [IS_MAC ? 'app' : 'exe'] }] });
       return result.canceled ? null : result.filePaths[0];
     });
-    this.ipc('quick:capture', region => { if (typeof region !== 'boolean') throw new Error('截图参数无效'); return this.capture(region); });
+    this.ipc('quick:capture', (region, mode) => { if (typeof region !== 'boolean') throw new Error('截图参数无效'); if (mode !== undefined && mode !== 'fast' && mode !== 'advanced') throw new Error('截图模式无效'); return this.capture(region, mode as 'fast' | 'advanced' | undefined); });
     this.ipc('quick:folder', async () => { await mkdir(this.screenshot.folder, { recursive: true }); const error = await shell.openPath(this.screenshot.folder); if (error) throw new Error(error); });
     this.ipc('quick:clear', () => { this.history = []; this.broadcast(); });
   }
-  state(): QuickState { return { history: this.history, screenshotShortcutActive: !!this.activeShortcut, capturing: this.capturing }; }
+  state(): QuickState { return { history: this.history.slice(0, this.deps.settings().historyLimit), screenshotShortcutActive: !!this.activeShortcut, capturing: this.capturing }; }
   /** Called only by OverlayManager's local committed-ping event, never preview/remote events. */
   localPing(ping: SharedPing): void {
     if (!this.deps.enabled() || this.capturing || this.disposed) return;
-    for (const rule of this.engine.accept(ping.id, this.deps.settings())) void this.execute(rule);
+    for (const rule of this.engine.accept(ping.id, this.deps.settings(), Date.now(), markerButton(ping.button))) void this.execute(rule);
   }
   breakSequence(): void { this.engine.breakSequence(); }
   changed(previous: QuickActionsSettings): void {
@@ -77,8 +78,8 @@ export class QuickActions {
       return ok;
     } catch { return false; }
   }
-  private async capture(region: boolean): Promise<void> {
-    try { await this.screenshot.capture(region); }
+  private async capture(region: boolean, mode?: 'fast' | 'advanced'): Promise<void> {
+    try { await this.screenshot.capture(region, mode); }
     catch (e) { this.report('截图失败', (e as Error).message, false); throw e; }
   }
   private async execute(rule: QuickRule): Promise<void> {
@@ -93,7 +94,7 @@ export class QuickActions {
   }
   private report(name: string, detail: string, ok: boolean): void {
     if (this.disposed) return;
-    this.history = [{ id: crypto.randomUUID(), time: Date.now(), name, detail, ok }, ...this.history].slice(0, 30);
+    this.history = [{ id: crypto.randomUUID(), time: Date.now(), name, detail, ok }, ...this.history].slice(0, 10);
     this.broadcast(); this.deps.toast(name, detail);
   }
   private broadcast(): void { if (!this.disposed) settingsWindow()?.webContents.send('quick:changed', this.state()); }

@@ -1,4 +1,4 @@
-> **快捷增强版（macOS / Windows）**：基于原版 v0.5.1，保留原轮盘、表情、美术与音效，新增连续信号快捷动作和截图到剪贴板。使用与构建见 [快捷功能说明](docs/quick-actions.zh-CN.md)。本仓库 Release 提供增强版安装包。原项目来自 [darrenprx/lolPing](https://github.com/darrenprx/lolPing)。
+> **快捷增强版（macOS / Windows）**：基于原版 v0.5.1，保留原轮盘、表情、美术与音效，新增连续信号快捷动作、左右键独立同步，以及快速截图 / 标注 / 离线 OCR / 滚动长图。使用与构建见 [快捷功能说明](docs/quick-actions.zh-CN.md)。本仓库 Release 提供增强版安装包。原项目来自 [darrenprx/lolPing](https://github.com/darrenprx/lolPing)。
 
 <h1 align="center"><img src="assets/textures/generic_ping.png" width="56" alt=""><br>lolPing</h1>
 

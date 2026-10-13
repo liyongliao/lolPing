@@ -1,3 +1,4 @@
+import type { MarkerButton } from './mouseButtons';
 import type { QuickState } from './quickActions';
 import type { EmoteArt, EmoteFile, EmoteRef, ImportResult } from './emotes';
 import type { PingId } from './pings';
@@ -22,9 +23,9 @@ export interface PingTag {
 export interface OverlayEvents {
   'overlay:settings': OverlaySettings;
   /** `wheel` names the wheel the gesture belongs to; missing means 'ping' (the site demo leaves it out). */
-  'wheel:open': Point & { wheel?: WheelKind };
-  'wheel:move': Point & { wheel?: WheelKind };
-  'wheel:release': Point & { wheel?: WheelKind };
+  'wheel:open': Point & { wheel?: WheelKind; button?: MarkerButton };
+  'wheel:move': Point & { wheel?: WheelKind; button?: MarkerButton };
+  'wheel:release': Point & { wheel?: WheelKind; button?: MarkerButton };
   'wheel:cancel': null;
   /** `tag` marks a ping from another room member. */
   'ping:spawn': Point & { id: PingId; tag?: PingTag };
@@ -75,7 +76,7 @@ export interface SettingsApi {
   getQuickState(): Promise<QuickState>;
   onQuickState(cb: (state: QuickState) => void): () => void;
   pickQuickApp(): Promise<string | null>;
-  captureScreenshot(region: boolean): Promise<void>;
+  captureScreenshot(region: boolean, mode?: 'fast' | 'advanced'): Promise<void>;
   openScreenshotFolder(): Promise<void>;
   clearQuickHistory(): Promise<void>;
   readonly platform: Platform;

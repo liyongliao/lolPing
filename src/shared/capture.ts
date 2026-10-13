@@ -1,8 +1,17 @@
-export interface CaptureFrame { dataUrl: string; width: number; height: number }
+export type CaptureMode = 'fast' | 'advanced';
+export interface CaptureFrame {
+  dataUrl: string; width: number; height: number;
+  session: number; mode: CaptureMode; stage: 'capture' | 'scroll' | 'working';
+  message?: string; frames?: number;
+}
 export interface CaptureRect { x: number; y: number; width: number; height: number }
 export interface CaptureApi {
   frame(): Promise<CaptureFrame | null>;
+  onFrame(cb: (frame: CaptureFrame | null) => void): () => void;
   finish(rect: CaptureRect | null): Promise<void>;
+  advanced(rect: CaptureRect, png: Uint8Array, action: 'image' | 'text' | 'scroll'): Promise<void>;
+  scrollNext(): Promise<void>;
+  scrollDone(): Promise<void>;
 }
 export function boundedCrop(rect: unknown, width: number, height: number): CaptureRect {
   if (!rect || typeof rect !== 'object') throw new Error('截图区域无效');

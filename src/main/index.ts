@@ -1,3 +1,4 @@
+import { scopeAllows, markerButton } from '../shared/mouseButtons';
 import { QuickActions } from './quickActions';
 import { app, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences } from 'electron';
 import { randomBytes, randomInt } from 'node:crypto';
@@ -139,7 +140,10 @@ function start(): void {
   }
 
   // Room: pings shared with other lolPing users, on the network and through public relays.
-  const lan = new LanTransport();
+  const testPort = process.env.LOLPING_TEST_DATA_DIR ? Number(process.env.LOLPING_TEST_LAN_PORT) : 0;
+  const testPeer = Number(process.env.LOLPING_TEST_LAN_PEER_PORT);
+  const localTest = Number.isInteger(testPort) && testPort > 1024 && testPort < 65536 && Number.isInteger(testPeer) && testPeer > 1024 && testPeer < 65536;
+  const lan = new LanTransport(localTest ? { port: testPort, bindAddress: '127.0.0.1', broadcast: false, seeds: [{ host: '127.0.0.1', port: testPeer }] } : {});
   const relay = new RelayTransport({ urls: relayUrls() });
   const room = new RoomManager({
     transports: [lan, relay],
@@ -263,13 +267,13 @@ function start(): void {
   overlays.on('shared', (p: SharedPing) => {
     quickActions.localPing(p);
     const shared = toShared(overlays.numbered(), p.displayId, p.x, p.y);
-    if (shared) room.sendPing(p.id, shared);
+    if (shared && scopeAllows(settings.roomSyncButton, markerButton(p.button))) room.sendPing(p.id, shared);
   });
   room.on('remoteEmote', (p) => overlays.spawnRemoteEmote(p));
   overlays.on('sharedEmote', (p: SharedEmote) => {
     quickActions.breakSequence();
     const shared = toShared(overlays.numbered(), p.displayId, p.x, p.y);
-    if (shared) room.sendEmote(p.ref, shared);
+    if (shared && scopeAllows(settings.roomSyncButton, markerButton(p.button))) room.sendEmote(p.ref, shared);
   });
   room.on('saveCode', (code: string | null) => store.update({ lastRoomCode: code }));
   room.on('toast', (n: RoomToast) => {
