@@ -6,9 +6,12 @@
   "description": "League of Legends style ping wheel for your Windows and macOS desktop",
   "author": "Danrui Meng (https://github.com/darrenprx)",
   "license": "MIT",
-  "homepage": "https://github.com/darrenprx/lolPing#readme",
-  "repository": { "type": "git", "url": "https://github.com/darrenprx/lolPing.git" },
-  "bugs": "https://github.com/darrenprx/lolPing/issues",
+  "homepage": "https://github.com/liyongliao/lolPing#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/liyongliao/lolPing.git"
+  },
+  "bugs": "https://github.com/liyongliao/lolPing/issues",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -22,12 +25,14 @@
     "dist:mac": "npm run build:helper && electron-vite build && electron-builder --mac --arm64 --publish never",
     "dev:site": "vite --config site/vite.config.ts",
     "build:site": "vite build --config site/vite.config.ts",
-    "media": "npm run build:site && electron tools/capture-media/capture.mjs"
+    "media": "npm run build:site && electron tools/capture-media/capture.mjs",
+    "test:e2e": "npm run build && playwright test"
   },
   "devDependencies": {
     "@fluentui/react-components": "9.74.9",
     "@fluentui/react-icons": "2.0.343",
     "@noble/secp256k1": "3.2.0",
+    "@playwright/test": "^1.61.1",
     "@types/node": "22.20.4",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
@@ -48,12 +53,31 @@
   "build": {
     "appId": "com.lolping.app",
     "productName": "lolPing",
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["out/**/*", "package.json"],
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "out/**/*",
+      "package.json",
+      "LICENSE"
+    ],
     "win": {
-      "target": [{ "target": "nsis", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico",
-      "extraResources": [{ "from": "native/hook-helper/build/hook-helper.exe", "to": "hook-helper.exe" }]
+      "extraResources": [
+        {
+          "from": "native/hook-helper/build/hook-helper.exe",
+          "to": "hook-helper.exe"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,
@@ -63,22 +87,47 @@
       "include": "build/installer.nsh"
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["arm64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
       "icon": "build/icon.png",
       "category": "public.app-category.utilities",
       "identity": "-",
       "hardenedRuntime": false,
       "extraResources": [
-        { "from": "native/hook-helper/build/hook-helper", "to": "hook-helper" },
-        { "from": "build", "to": ".", "filter": ["tray*Template*.png"] }
+        {
+          "from": "native/hook-helper/build/hook-helper",
+          "to": "hook-helper"
+        },
+        {
+          "from": "build",
+          "to": ".",
+          "filter": [
+            "tray*Template*.png"
+          ]
+        }
       ],
       "extendInfo": {
         "NSAccessibilityUsageDescription": "lolPing reads the mouse and keyboard to open the ping wheel or the emote wheel when you hold its key and drag.",
         "NSDownloadsFolderUsageDescription": "lolPing saves update downloads to your Downloads folder.",
-        "NSLocalNetworkUsageDescription": "lolPing finds the other people in your room on the local network and sends them your pings."
+        "NSLocalNetworkUsageDescription": "lolPing finds the other people in your room on the local network and sends them your pings.",
+        "NSScreenCaptureUsageDescription": "lolPing 使用屏幕录制权限进行区域或全屏截图，并复制到剪贴板。"
       }
     },
-    "dmg": { "artifactName": "lolPing-${version}-arm64.dmg" },
-    "publish": [{ "provider": "github", "owner": "darrenprx", "repo": "lolPing" }]
+    "dmg": {
+      "artifactName": "lolPing-${version}-arm64.dmg"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "liyongliao",
+        "repo": "lolPing"
+      }
+    ]
   }
 }

@@ -1,3 +1,4 @@
+import { QuickActionsSection } from './components/QuickActionsSection';
 import { Dropdown, FluentProvider, Option, webDarkTheme, webLightTheme } from '@fluentui/react-components';
 import {
   ArrowMove24Regular, ArrowSync24Regular, CursorClick24Regular, DataPie24Regular, Games24Regular, Info24Regular, Keyboard24Regular, MusicNote224Regular,
@@ -36,6 +37,7 @@ const SECTIONS: { id: string; label: (t: Strings) => string; icon: ReactNode }[]
   { id: 'toggle', label: (t) => t.navToggle, icon: <Keyboard24Regular /> },
   { id: 'pings', label: (t) => t.navPings, icon: <Speaker224Regular /> },
   { id: 'wheel', label: (t) => t.navWheel, icon: <DataPie24Regular /> },
+  { id: 'quick-actions', label: () => '快捷动作', icon: <Rocket24Regular /> },
   { id: 'emotes', label: (t) => t.navEmotes, icon: <Emoji24Regular /> },
   { id: 'room', label: (t) => t.navRoom, icon: <PeopleCommunity24Regular /> },
   { id: 'app', label: (t) => t.navApp, icon: <Settings24Regular /> },
@@ -196,6 +198,9 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
           defaults={{ wheel: DEFAULT_WHEEL, center: DEFAULT_CLICK_PING }}
           labels={{ title: t.wheelTitle, desc: t.wheelDesc(trigger), poolTitle: t.allPings, poolDesc: t.allPingsDesc }}
           onChange={(patch) => void update(pingPatch(patch))} onPreview={(id) => void api.previewPing(id)} />
+
+        <div className="section" id="quick-actions">快捷动作</div>
+        <QuickActionsSection settings={s} update={update} />
 
         <div className="section" id="emotes">{t.navEmotes}</div>
         <EmoteSection settings={s} update={update} lengthUnit={LENGTH_UNIT} />

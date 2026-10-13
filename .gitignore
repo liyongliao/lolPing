@@ -8,3 +8,6 @@ native/hook-helper/build/
 .DS_Store
 tools/extract-assets/.cache/
 tools/extract-assets/__pycache__/
+
+test-results/
+playwright-report/

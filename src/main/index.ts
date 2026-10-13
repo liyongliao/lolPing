@@ -1,3 +1,4 @@
+import { QuickActions } from './quickActions';
 import { app, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences } from 'electron';
 import { randomBytes, randomInt } from 'node:crypto';
 import { userInfo } from 'node:os';
@@ -79,6 +80,7 @@ function start(): void {
   }
   const store = new SettingsStore(settingsDir(), undefined, PLATFORM, { name: osUserName(), color: randomInt(8) });
   let settings = store.load();
+  if (store.firstRun) settings = store.update({ language: 'zh-CN' });
   // An imported emote whose still is gone is dropped; normalising the shorter list repairs the wheel slots that used it.
   const kept = library.present(settings.customEmotes);
   if (kept.length !== settings.customEmotes.length) settings = store.update({ customEmotes: kept });
@@ -86,15 +88,24 @@ function start(): void {
   const text = (): Strings => strings(resolveLang(settings.language, app.getLocale()), PLATFORM);
   let enabled = settings.enabledOnStart;
   let quitting = false; // read by pushStatus: once true, the tray and overlays are gone
+  let screenshotting = false;
   let capturing = false; // the settings page is listening for a key, so the helper must stay suspended
 
   const overlays = new OverlayManager(overlaySettings(settings), (ref, remote) => resolveEmoteArt(ref, settings.customEmotes, remote));
   overlays.start();
   const bridge = new InputBridge({ command: helperExePath() });
+  const syncSuspend = (): void => bridge.send({ type: 'suspend', on: capturing || screenshotting });
+  const quickActions = new QuickActions({
+    settings: () => settings.quickActions,
+    enabled: () => enabled && !quitting,
+    suspend: (on) => { screenshotting = on; overlays.cancelWheel(); syncSuspend(); },
+    toast: (title, body) => overlays.toast(title, body),
+  });
 
-  // Updates: only in an installed build, or in a development build pointed at a test server with LOLPING_UPDATE_TEST_URL.
+  // Upstream updater code remains available only when explicitly pointed at a test server.
   const testUrl = process.env.LOLPING_UPDATE_TEST_URL || undefined;
-  const updater = app.isPackaged || testUrl ? createUpdater() : null;
+  // This enhanced build must not install upstream binaries that remove its extra features.
+  const updater = testUrl ? createUpdater() : null;
   function createUpdater(): Updater {
     const backend = IS_MAC
       ? new MacBackend({
@@ -250,11 +261,13 @@ function start(): void {
   overlays.on('displays', pushRoom);
   room.on('remotePing', (p) => overlays.spawnRemote(p));
   overlays.on('shared', (p: SharedPing) => {
+    quickActions.localPing(p);
     const shared = toShared(overlays.numbered(), p.displayId, p.x, p.y);
     if (shared) room.sendPing(p.id, shared);
   });
   room.on('remoteEmote', (p) => overlays.spawnRemoteEmote(p));
   overlays.on('sharedEmote', (p: SharedEmote) => {
+    quickActions.breakSequence();
     const shared = toShared(overlays.numbered(), p.displayId, p.x, p.y);
     if (shared) room.sendEmote(p.ref, shared);
   });
@@ -291,6 +304,7 @@ function start(): void {
   function setEnabled(on: boolean): void {
     if (on === enabled) return;
     enabled = on;
+    quickActions.breakSequence();
     bridge.send(configCommand(store.get(), enabled)); // also refreshes the config re-sent after restarts
     const t = text();
     overlays.toast(on ? t.toastOn : t.toastOff, t.toastToggleHint(hotkeyLabel(store.get().toggleHotkey, PLATFORM)));
@@ -302,7 +316,7 @@ function start(): void {
     if (ev.type === 'toggled') setEnabled(ev.enabled);
     else if (ev.type === 'ready') {
       // A restarted helper starts unsuspended: re-apply an active key capture.
-      if (capturing) bridge.send({ type: 'suspend', on: true });
+      if (capturing || screenshotting) syncSuspend();
     } else if (ev.type === 'error') console.warn('[helper]', ev.code ?? '', ev.message);
     else overlays.handle(ev);
   });
@@ -323,6 +337,7 @@ function start(): void {
   store.on('change', (s: Settings) => {
     const previous = settings;
     settings = s;
+    quickActions.changed(previous.quickActions);
     bridge.send(configCommand(s, enabled));
     overlays.updateSettings(overlaySettings(s));
     settingsWindow()?.webContents.send(SETTINGS_CH.changed, s);
@@ -345,6 +360,7 @@ function start(): void {
 
   registerSettingsIpc({
     store,
+    quickActions,
     library,
     getStatus: status,
     setEnabled,
@@ -354,7 +370,7 @@ function start(): void {
     retryHelper: startHelper,
     setCapturing: (on) => {
       capturing = on;
-      bridge.send({ type: 'suspend', on });
+      syncSuspend();
     },
     openAccessibility: () => {
       systemPreferences.isTrustedAccessibilityClient(true); // adds lolPing to the list and shows the system prompt
@@ -381,7 +397,7 @@ function start(): void {
   onSettingsWindowGone(() => {
     if (!capturing) return;
     capturing = false;
-    bridge.send({ type: 'suspend', on: false });
+    syncSuspend();
   });
 
   bridge.send(configCommand(settings, enabled));
@@ -409,6 +425,7 @@ function start(): void {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
+    quickActions.dispose();
     updater?.stop(); // aborts a download and drops a check in flight; an install that is quitting the app is left alone
     room.quit(); // says bye, so the others see "left" instead of waiting for a timeout
     stopWaitingForAccess();

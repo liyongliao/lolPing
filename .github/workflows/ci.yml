@@ -2,46 +2,103 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-jobs:
-  test:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run typecheck
-      # Builds hook-helper.exe and runs the C++ tests. The TypeScript tests need the built helper.
-      - run: npm run test:helper
-      - run: npm test
-      - run: npm run build
-      - run: npm run build:site
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
-  test-mac:
-    runs-on: macos-latest # Apple Silicon
+jobs:
+  windows:
+    name: Windows installer and shortcut tests
+    runs-on: windows-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx install-electron
+      - run: npm run typecheck
+      - name: Build and test native Windows input helper
+        run: npm run test:helper
+      - name: Unit and integration tests
+        run: npm test
+      - name: Build Windows x64 installer
+        run: npm run dist
+      - name: Install the generated EXE
+        shell: pwsh
+        env:
+          LOLPING_TEST_DATA_DIR: ${{ runner.temp }}/lolping-installer-profile
+        run: |
+          $installer = Get-ChildItem release/lolPing-Setup-*.exe | Select-Object -First 1
+          $destination = Join-Path $env:RUNNER_TEMP 'lolping-installed'
+          $process = Start-Process -FilePath $installer.FullName -ArgumentList "/S /currentuser /D=$destination" -PassThru -Wait
+          if ($process.ExitCode -ne 0) { throw "Installer failed: $($process.ExitCode)" }
+          $exe = Join-Path $destination 'lolPing.exe'
+          if (!(Test-Path $exe)) { throw "Installed executable missing: $exe" }
+          if (!(Test-Path (Join-Path $destination 'resources/hook-helper.exe'))) { throw 'Packaged native helper is missing' }
+          Get-Process lolPing -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | Stop-Process -Force
+          "LOLPING_E2E_EXECUTABLE=$exe" >> $env:GITHUB_ENV
+      - name: Test installed app, native gestures, application launching and screenshot clipboard
+        run: npx playwright test
+        env:
+          LOLPING_SCREENSHOT_DIR: ${{ github.workspace }}/test-results/screenshots
+      - name: Generate installer checksum and build record
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem release/lolPing-Setup-*.exe | Select-Object -First 1
+          $hash = (Get-FileHash $installer.FullName -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($installer.Name)" | Set-Content release/SHA256SUMS.txt
+          @("Commit: $env:GITHUB_SHA", "Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}", "OS: $([System.Environment]::OSVersion.VersionString)", "Installer installed successfully; all Electron shortcut tests passed.") | Set-Content release/BUILD-INFO.txt
+      - name: Upload tested Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: lolPing-windows-x64
+          path: |
+            release/lolPing-Setup-*.exe
+            release/SHA256SUMS.txt
+            release/BUILD-INFO.txt
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload desktop test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-shortcut-test-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  mac:
+    name: macOS regression and installer
+    runs-on: macos-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      # Builds the macOS hook-helper (event tap included) and runs the C++ tests.
       - run: npm run test:helper
       - run: npm test
       - run: npm run dist:mac
         env:
-          # electron-builder skips signing on pull requests. The ad-hoc signature needs no secrets, and an unsigned
-          # arm64 app won't launch, so sign here too.
           CSC_FOR_PULL_REQUEST: true
       - name: Check the app bundle
         run: |
@@ -53,4 +110,5 @@ jobs:
         with:
           name: lolPing-mac-arm64
           path: release/*.dmg
-          retention-days: 14
+          if-no-files-found: error
+          retention-days: 30

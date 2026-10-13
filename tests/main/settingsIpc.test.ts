@@ -13,7 +13,10 @@ import type { UpdateState } from '../../src/shared/update';
 const h = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, ...args: unknown[]) => unknown>(),
   opened: [] as string[],
+  sender: { mainFrame: {} },
 }));
+
+vi.mock('../../src/main/settingsWindow', () => ({ settingsWindow: () => ({ webContents: h.sender }) }));
 
 vi.mock('electron', () => ({
   ipcMain: { handle: (channel: string, fn: (event: unknown, ...args: unknown[]) => unknown) => h.handlers.set(channel, fn) },
@@ -34,7 +37,7 @@ const idOf = (b: Uint8Array): string => `c:${createHash('sha256').update(b).dige
 
 let store: SettingsStore;
 let library: EmoteLibrary;
-const call = (channel: string, ...args: unknown[]): Promise<unknown> => Promise.resolve(h.handlers.get(channel)!({}, ...args));
+const call = (channel: string, ...args: unknown[]): Promise<unknown> => Promise.resolve(h.handlers.get(channel)!({ sender: h.sender, senderFrame: h.sender.mainFrame }, ...args));
 
 beforeEach(() => {
   h.handlers.clear();
@@ -55,6 +58,14 @@ function registerWith(update?: SettingsIpcDeps['update']): void {
 }
 
 describe('settings IPC', () => {
+  it('rejects settings changes from another window', () => {
+    expect(() => h.handlers.get(SETTINGS_CH.set)!({ sender: { mainFrame: {} } }, { volume: 1 })).toThrow('不允许');
+  });
+
+  it('rejects malformed shortcut rules without altering existing settings', async () => {
+    expect(await call(SETTINGS_CH.set, { quickActions: { rules: [] } })).toMatchObject({ ok: false });
+    expect(store.get().quickActions.rules).toHaveLength(3);
+  });
   it('setSettings ignores customEmotes from the window', async () => {
     const forged = [{ id: `c:${'ab'.repeat(16)}`, name: 'forged', animated: true }];
     const result = await call(SETTINGS_CH.set, { volume: 12, customEmotes: forged });

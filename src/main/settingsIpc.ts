@@ -1,3 +1,6 @@
+import { quickSettingsError, screenshotClashesWithToggle } from '../shared/quickActions';
+import type { QuickActions } from './quickActions';
+import { settingsWindow } from './settingsWindow';
 import { globalShortcut, ipcMain, shell } from 'electron';
 import { isCustomRef, isEmoteRefShape, type EmoteRef, type ImportResult } from '../shared/emotes';
 import type { Strings } from '../shared/i18n';
@@ -16,6 +19,7 @@ const PROJECT_URL = 'https://github.com/darrenprx/lolPing';
 export const LATEST_RELEASE_URL = `${PROJECT_URL}/releases/latest`;
 
 export interface SettingsIpcDeps {
+  quickActions?: QuickActions;
   store: SettingsStore;
   /** Imported emotes' files. Only the import and remove handlers change `customEmotes`. */
   library: EmoteLibrary;
@@ -77,12 +81,23 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
 
   ipcMain.handle(SETTINGS_CH.get, () => d.store.get());
   ipcMain.handle(SETTINGS_CH.set, (_e, raw: unknown): SetSettingsResult => {
+    if (!_e.sender || _e.sender !== settingsWindow()?.webContents || _e.senderFrame !== _e.sender.mainFrame) throw new Error('不允许的设置请求');
     const patch = rendererPatch(raw);
     if (patchClashes(d.store.get(), patch, d.platform)) {
       return { ok: false, error: d.text().emoteKeyClash, settings: d.store.get() };
     }
+    const nextQuick = patch.quickActions ?? d.store.get().quickActions;
+    const invalidQuick = patch.quickActions === undefined ? null : quickSettingsError(patch.quickActions);
+    if (invalidQuick) return { ok: false, error: invalidQuick, settings: d.store.get() };
+    if (screenshotClashesWithToggle(nextQuick.screenshotShortcut, patch.toggleHotkey ?? d.store.get().toggleHotkey, d.platform)) {
+      return { ok: false, error: '截图快捷键不能与暂停信号快捷键相同。', settings: d.store.get() };
+    }
     if (patch.toggleHotkey) {
       const error = hotkeyConflict(patch.toggleHotkey, d.store.get().toggleHotkey, d.text(), d.platform);
+      if (error) return { ok: false, error, settings: d.store.get() };
+    }
+    if (patch.quickActions !== undefined) {
+      const error = quickSettingsError(patch.quickActions) ?? d.quickActions?.applyShortcut(patch.quickActions.screenshotShortcut);
       if (error) return { ok: false, error, settings: d.store.get() };
     }
     return { ok: true, settings: d.store.update(patch) };

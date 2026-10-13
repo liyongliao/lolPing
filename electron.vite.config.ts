@@ -15,7 +15,7 @@ export default defineConfig({
   preload: {
     build: {
       rollupOptions: {
-        input: { overlay: resolve('src/preload/overlay.ts'), settings: resolve('src/preload/settings.ts') },
+        input: { overlay: resolve('src/preload/overlay.ts'), settings: resolve('src/preload/settings.ts'), capture: resolve('src/preload/capture.ts') },
         output: { format: 'cjs', entryFileNames: '[name].js' },
       },
     },
@@ -29,6 +29,7 @@ export default defineConfig({
         input: {
           overlay: resolve('src/renderer/overlay/index.html'),
           settings: resolve('src/renderer/settings/index.html'),
+          capture: resolve('src/renderer/capture/index.html'),
         },
       },
     },

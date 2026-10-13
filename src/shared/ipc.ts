@@ -1,3 +1,4 @@
+import type { QuickState } from './quickActions';
 import type { EmoteArt, EmoteFile, EmoteRef, ImportResult } from './emotes';
 import type { PingId } from './pings';
 import type { Platform } from './platform';
@@ -71,6 +72,12 @@ export { SETTINGS_CH } from './settingsChannels';
 
 /** window.settingsApi in the settings renderer. */
 export interface SettingsApi {
+  getQuickState(): Promise<QuickState>;
+  onQuickState(cb: (state: QuickState) => void): () => void;
+  pickQuickApp(): Promise<string | null>;
+  captureScreenshot(region: boolean): Promise<void>;
+  openScreenshotFolder(): Promise<void>;
+  clearQuickHistory(): Promise<void>;
   readonly platform: Platform;
   getSettings(): Promise<Settings>;
   setSettings(patch: Partial<Settings>): Promise<SetSettingsResult>;

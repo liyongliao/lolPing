@@ -1,3 +1,4 @@
+import { DEFAULT_QUICK_ACTIONS, normalizeQuickActions, type QuickActionsSettings } from './quickActions';
 import { DEFAULT_CLICK_EMOTE, DEFAULT_EMOTE_WHEEL } from './emoteCatalog';
 import {
   CUSTOM_NAME_MAX, MAX_CUSTOM_EMOTES, customHash, isCustomRef, normalizeClickEmote, normalizeEmoteWheel,
@@ -24,6 +25,8 @@ export const keyboardTriggers = (platform: Platform): NamedTrigger[] =>
   platform === 'mac' ? ['alt', 'ctrl', 'shift', 'win'] : ['alt', 'ctrl', 'shift', 'win', 'capslock'];
 
 export interface Settings {
+  /** Local productivity actions; never triggered by previews or room peers. */
+  quickActions: QuickActionsSettings;
   version: 1;
   enabledOnStart: boolean;
   trigger: TriggerKey;
@@ -78,6 +81,7 @@ export interface Identity {
 }
 
 export const DEFAULT_SETTINGS: Settings = {
+  quickActions: structuredClone(DEFAULT_QUICK_ACTIONS),
   version: 1,
   enabledOnStart: true,
   trigger: 'alt',
@@ -217,6 +221,7 @@ export function normalizeSettings(raw: unknown, platform: Platform = 'win', iden
   const custom = customEmotes(r.customEmotes);
   return {
     version: 1,
+    quickActions: normalizeQuickActions(r.quickActions),
     enabledOnStart: bool(r.enabledOnStart, 'enabledOnStart'),
     trigger: pingTrigger,
     dragThresholdPx: num(r.dragThresholdPx, 'dragThresholdPx'),
