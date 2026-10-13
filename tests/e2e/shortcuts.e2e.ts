@@ -160,6 +160,11 @@ test.describe('Windows native integration', () => {
   };
   test('native Alt-drag assist copies text and two question pings open a real EXE', async () => {
     await backupClipboard();
+    await overlay.evaluate(() => {
+      const events: unknown[] = [];
+      (window as unknown as { nativeEvents: unknown[] }).nativeEvents = events;
+      for (const channel of ['wheel:open', 'wheel:move', 'wheel:release', 'wheel:cancel', 'ping:spawn'] as const) window.overlay.on(channel, data => { events.push({ channel, data }); });
+    });
     const target = join(data, '快捷应用 with spaces.exe');
     const compiler = join(process.env.SystemRoot!, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
     await exec(compiler, ['/nologo', '/target:winexe', `/out:${target}`, resolve('tests/e2e/fixtures/launcher.cs')]);
@@ -172,8 +177,10 @@ test.describe('Windows native integration', () => {
     await expect.poll(async () => (await page.evaluate(() => window.settingsApi.getStatus())).helper).toBe('running');
     await app.evaluate(async ({ clipboard }) => { await clipboard.writeText('native input pending'); });
     await input('Assist', 3);
+    console.log('Native assist events:', JSON.stringify(await overlay.evaluate(() => (window as unknown as { nativeEvents: unknown[] }).nativeEvents)));
     await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toBe('lolPing shortcut test');
     await input('Missing', 2);
+    console.log('Native question events:', JSON.stringify(await overlay.evaluate(() => (window as unknown as { nativeEvents: unknown[] }).nativeEvents)));
     await expect.poll(async () => readFile(target + '.launched', 'utf8').catch(() => '')).toBe('opened by lolPing');
     await expect.poll(async () => (await page.evaluate(() => window.settingsApi.getQuickState())).history.filter(h => h.ok).length).toBe(2);
   });
