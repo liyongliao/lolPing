@@ -1,4 +1,4 @@
-> **本地快捷增强版（macOS / Windows）**：基于原版 v0.5.1，保留原轮盘、表情、美术与音效，新增连续信号快捷动作和截图到剪贴板。使用与构建见 [快捷功能说明](docs/quick-actions.zh-CN.md)。下方保留上游项目说明；上游下载链接提供的是原版。
+> **快捷增强版（macOS / Windows）**：基于原版 v0.5.1，保留原轮盘、表情、美术与音效，新增连续信号快捷动作和截图到剪贴板。使用与构建见 [快捷功能说明](docs/quick-actions.zh-CN.md)。本仓库 Release 提供增强版安装包。原项目来自 [darrenprx/lolPing](https://github.com/darrenprx/lolPing)。
 
 <h1 align="center"><img src="assets/textures/generic_ping.png" width="56" alt=""><br>lolPing</h1>
 
@@ -13,13 +13,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/darrenprx/lolPing/releases/latest"><b>Download for Windows</b></a> ·
-  <a href="https://github.com/darrenprx/lolPing/releases/latest"><b>Download for Mac</b></a> (Apple Silicon, experimental)
+  <a href="https://github.com/liyongliao/lolPing/releases/latest"><b>Download for Windows</b></a> ·
+  <a href="https://github.com/liyongliao/lolPing/releases/latest"><b>Download for Mac</b></a> (Apple Silicon, experimental)
 </p>
 
 <p align="center">
-  <a href="https://github.com/darrenprx/lolPing/actions/workflows/ci.yml"><img src="https://github.com/darrenprx/lolPing/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/darrenprx/lolPing/releases/latest"><img src="https://img.shields.io/github/v/release/darrenprx/lolPing" alt="Latest release"></a>
+  <a href="https://github.com/liyongliao/lolPing/actions/workflows/ci.yml"><img src="https://github.com/liyongliao/lolPing/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/liyongliao/lolPing/releases/latest"><img src="https://img.shields.io/github/v/release/liyongliao/lolPing" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/darrenprx/lolPing" alt="MIT license"></a>
 </p>
 
@@ -31,7 +31,7 @@ Pings and emotes show up in whole-screen capture, so friends watching your Disco
 
 ### Windows
 
-1. Download `lolPing-Setup-<version>.exe` from the [latest release](https://github.com/darrenprx/lolPing/releases/latest).
+1. Download `lolPing-Setup-<version>.exe` from the [latest release](https://github.com/liyongliao/lolPing/releases/latest).
 2. Run it. The installer isn't code-signed, so Windows SmartScreen may say "Windows protected your PC". Select **More info**, then **Run anyway**.
 3. lolPing opens its settings and moves to the tray. Hold Alt and drag anywhere to ping.
 
@@ -39,9 +39,9 @@ lolPing is built for Windows 11, 64-bit. Windows 10 may work, but it isn't teste
 
 ### macOS (experimental)
 
-The Mac version needs an Apple Silicon Mac (M1 or later) and macOS 12 or later. It is built and tested automatically, but hasn't had much use on real Macs yet. Please [report](https://github.com/darrenprx/lolPing/issues) anything that doesn't work.
+The Mac version needs an Apple Silicon Mac (M1 or later) and macOS 12 or later. It is built and tested automatically, but hasn't had much use on real Macs yet. Please [report](https://github.com/liyongliao/lolPing/issues) anything that doesn't work.
 
-1. Download `lolPing-<version>-arm64.dmg` from the [latest release](https://github.com/darrenprx/lolPing/releases/latest), open it, and drag lolPing into Applications.
+1. Download `lolPing-<version>-arm64.dmg` from the [latest release](https://github.com/liyongliao/lolPing/releases/latest), open it, and drag lolPing into Applications.
 2. Open lolPing. It isn't signed by a registered Apple developer, so macOS says it can't check it for malware. Select **Done**, open **System Settings → Privacy & Security**, scroll down, select **Open Anyway** next to the lolPing message, and confirm.
    If macOS instead says lolPing "is damaged", run `xattr -dr com.apple.quarantine /Applications/lolPing.app` in Terminal and open it again.
 3. lolPing asks for **Accessibility** access, which it needs to read the mouse and keyboard. Select **Open System Settings** and turn lolPing on. Pinging starts as soon as it's allowed.
@@ -51,7 +51,7 @@ The Mac version needs an Apple Silicon Mac (M1 or later) and macOS 12 or later. 
 
 ### Updating an older version
 
-Updating from v0.4 or earlier: download the new version by hand once. From v0.5 on, lolPing updates itself (see [Updates](#updates)).
+Download this enhanced build from [this repository’s latest release](https://github.com/liyongliao/lolPing/releases/latest) and install it over the existing version. Your settings are preserved.
 
 ## Use
 
@@ -86,13 +86,7 @@ Settings are saved in `%APPDATA%\lolPing\settings.json` on Windows and `~/Librar
 
 ## Updates
 
-lolPing checks GitHub for a new version 10 seconds after it starts, then every 6 hours. When there is one, you get a notice on screen, and the tray menu and **Settings → App → About** offer **Update**. It asks first: nothing downloads until you click.
-
-- **Windows:** one click downloads the installer, verifies it, installs it silently into the same folder and restarts lolPing. The settings window opens after the restart.
-- **Mac:** lolPing downloads the disk image to your Downloads folder, verifies it, explains what to do, opens it, and quits. Drag lolPing into Applications, choose **Replace**, open it, and allow Accessibility again.
-- **Check for updates** in the tray menu, or in **Settings → App → About**, checks right away. From the tray, the result (up to date, or what went wrong) appears as a notice on screen.
-- **Check for updates automatically** (Settings → App, on by default) controls the scheduled checks. With it off, lolPing contacts GitHub only when you click **Check for updates** or **Update**.
-- **Privacy:** a check tells GitHub your IP address and lolPing's version, nothing else.
+Download updates from [this repository’s latest release](https://github.com/liyongliao/lolPing/releases/latest). This enhanced build currently uses manual updates; upstream automatic updates are disabled so an upstream installer cannot remove the extra shortcut features.
 
 ## Ping with friends (rooms)
 

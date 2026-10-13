@@ -37,7 +37,7 @@ npm run test:e2e
 
 Mac（Apple Silicon）：`npm run dist:mac`，产物为 `release/lolPing-0.5.1-arm64.dmg`。
 
-Windows（x64，在 Windows 上执行）：`npm run dist`，产物为 `release/lolPing-Setup-0.5.1.exe`。GitHub Actions 的 CI 在 Windows 上测试并生成安装包，在 Mac 上保留原版构建与签名校验。增强版仓库为 [liyongliao/lolPing](https://github.com/liyongliao/lolPing)。推送到 main 或 codex/* 分支会自动构建，合并到 main 后，也可在 Actions → CI → Run workflow 手动运行。通过测试后下载 `lolPing-windows-x64` artifact，其中包含安装 EXE、SHA-256 校验文件和构建来源。Windows 工作流先静默安装生成的 EXE，再针对实际安装目录运行桌面测试。
+Windows（x64，在 Windows 上执行）：`npm run dist`，产物为 `release/lolPing-Setup-0.5.1.exe`。GitHub Actions 的 CI 在 Windows 上测试并生成安装包，在 Mac 上保留原版构建与签名校验。增强版仓库为 [liyongliao/lolPing](https://github.com/liyongliao/lolPing)。推送到 main 或 codex/* 分支会自动构建，也可在 Actions → CI → Run workflow 手动运行。通过测试后下载 `lolPing-windows-x64` artifact，其中包含安装 EXE、SHA-256 校验文件和构建来源。Windows 工作流先静默安装生成的 EXE，再针对实际安装目录运行桌面测试。
 
 本机验证：macOS arm64，类型检查通过；731 项 TypeScript 测试通过、1 项上游测试跳过；411 项原生 C++ 检查通过；5 项 Electron 桌面流程测试通过。桌面测试覆盖创建规则与重启持久化、连发阈值与冷却、预览/远程信号隔离、原轮盘松手选中到动作执行、真实窗口框选/剪贴板/取消、无效配置和快捷键冲突。截图测试使用合成图像替代屏幕采集，避免读取个人屏幕内容，不代表已完成系统录屏权限验证。macOS 安装包的五项桌面测试也已全部通过，应用包通过 ad-hoc 签名校验。Windows 已在 GitHub 托管的 Windows runner 上完成安装及桌面自动化验证，详见下方构建记录；尚未在用户自己的 Windows 电脑上验收。
 
@@ -46,7 +46,7 @@ Windows（x64，在 Windows 上执行）：`npm run dist`，产物为 `release/l
 - 原版 `assets` 的 180 个文件逐个 SHA-256 对比一致：26 个纹理文件、22 个音频文件、132 个表情文件。
 - 原版 `src/renderer/overlay` 的 9 个文件和 `native/hook-helper/src` 的 16 个文件保持不变。
 - 原项目 MIT 许可证与原作者署名保留。英雄联盟美术与音频的版权归 Riot Games；上游的素材声明仍保留于 README。
-- 本增强版暂停连接上游自动更新，避免安装原版后丢失新增功能；维护者设立自己的发行渠道后可重新接入。README 中上游发布链接仍指向原版。
+- 本增强版暂停连接上游自动更新，避免安装原版后丢失新增功能；维护者设立自己的发行渠道后可重新接入。README 中的下载链接指向本增强版仓库的 Release。
 - 设置继续使用原版 lolPing 目录并兼容旧配置，新增 `quickActions` 字段。桌面测试使用临时目录，并在结束时还原剪贴板。
 - 前一版独立设计已备份至工作区同级 `lolping-lingxi-backup-20261013`，当前代码不再使用其界面或素材。
 
@@ -75,3 +75,8 @@ Windows 专用测试在 macOS 上跳过。上述是自动化验收范围；具�
 - 同一提交的 macOS 构建和签名检查也通过。安装包 artifact 保留 30 天，测试报告保留 14 天；到期后可重新运行构建。
 
 首次验收修复了测试脚本对 Windows 空剪贴板的处理，并改用带扫描码的 Alt 和真实鼠标移动输入；密码学批量测试单独放宽为 15 秒，以适应共享 runner 的速度。所有断言及原生交互验收均保留，没有跳过 Windows 快捷功能测试。
+
+
+## 下载已发布的安装包
+
+增强版已合并到 main。[GitHub Release v0.5.1](https://github.com/liyongliao/lolPing/releases/tag/v0.5.1) 提供 Windows x64 EXE、macOS Apple Silicon DMG、SHA-256 校验文件及构建来源记录。发布使用上述通过验证的 Actions 构建产物，发布标签与测试提交之间仅有说明文档差异。

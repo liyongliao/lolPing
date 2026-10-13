@@ -1,4 +1,4 @@
-> **本地快捷增强版（macOS / Windows）**：基于原版 v0.5.1，保留原轮盘、表情、美术与音效，新增连续信号快捷动作和截图到剪贴板。使用与构建见 [快捷功能说明](docs/quick-actions.zh-CN.md)。下方保留上游项目说明；上游下载链接提供的是原版。
+> **快捷增强版（macOS / Windows）**：基于原版 v0.5.1，保留原轮盘、表情、美术与音效，新增连续信号快捷动作和截图到剪贴板。使用与构建见 [快捷功能说明](docs/quick-actions.zh-CN.md)。本仓库 Release 提供增强版安装包。原项目来自 [darrenprx/lolPing](https://github.com/darrenprx/lolPing)。
 
 <h1 align="center"><img src="assets/textures/generic_ping.png" width="56" alt=""><br>lolPing</h1>
 
@@ -13,13 +13,13 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/darrenprx/lolPing/releases/latest"><b>下载 Windows 版</b></a> ·
-  <a href="https://github.com/darrenprx/lolPing/releases/latest"><b>下载 Mac 版</b></a>（Apple 芯片，实验性）
+  <a href="https://github.com/liyongliao/lolPing/releases/latest"><b>下载 Windows 版</b></a> ·
+  <a href="https://github.com/liyongliao/lolPing/releases/latest"><b>下载 Mac 版</b></a>（Apple 芯片，实验性）
 </p>
 
 <p align="center">
-  <a href="https://github.com/darrenprx/lolPing/actions/workflows/ci.yml"><img src="https://github.com/darrenprx/lolPing/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/darrenprx/lolPing/releases/latest"><img src="https://img.shields.io/github/v/release/darrenprx/lolPing" alt="最新版本"></a>
+  <a href="https://github.com/liyongliao/lolPing/actions/workflows/ci.yml"><img src="https://github.com/liyongliao/lolPing/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/liyongliao/lolPing/releases/latest"><img src="https://img.shields.io/github/v/release/liyongliao/lolPing" alt="最新版本"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/darrenprx/lolPing" alt="MIT 许可证"></a>
 </p>
 
@@ -31,7 +31,7 @@
 
 ### Windows
 
-1. 从[最新版本](https://github.com/darrenprx/lolPing/releases/latest)下载 `lolPing-Setup-<版本号>.exe`。
+1. 从[最新版本](https://github.com/liyongliao/lolPing/releases/latest)下载 `lolPing-Setup-<版本号>.exe`。
 2. 运行安装程序。安装程序没有代码签名，Windows SmartScreen 可能会提示“Windows 已保护你的电脑”：点击**更多信息**，再点**仍要运行**。
 3. lolPing 会打开设置窗口并常驻系统托盘。按住 Alt 在任意位置拖动即可发信号。
 
@@ -39,9 +39,9 @@ lolPing 面向 64 位 Windows 11。Windows 10 也许可以用，但没有测试�
 
 ### macOS（实验性）
 
-Mac 版需要 Apple 芯片（M1 或更新）的 Mac 和 macOS 12 或更新版本。它会自动构建和测试，但还没在真实的 Mac 上用过多少。遇到问题请[反馈](https://github.com/darrenprx/lolPing/issues)。
+Mac 版需要 Apple 芯片（M1 或更新）的 Mac 和 macOS 12 或更新版本。它会自动构建和测试，但还没在真实的 Mac 上用过多少。遇到问题请[反馈](https://github.com/liyongliao/lolPing/issues)。
 
-1. 从[最新版本](https://github.com/darrenprx/lolPing/releases/latest)下载 `lolPing-<版本号>-arm64.dmg`，打开后把 lolPing 拖进“应用程序”。
+1. 从[最新版本](https://github.com/liyongliao/lolPing/releases/latest)下载 `lolPing-<版本号>-arm64.dmg`，打开后把 lolPing 拖进“应用程序”。
 2. 打开 lolPing。它没有经过注册 Apple 开发者的签名，macOS 会提示无法检查其是否包含恶意软件：点“完成”，打开**系统设置 → 隐私与安全性**，向下滚动，在 lolPing 的提示旁点**仍要打开**并确认。
    如果 macOS 提示 lolPing“已损坏”，请在“终端”中运行 `xattr -dr com.apple.quarantine /Applications/lolPing.app`，然后再次打开。
 3. lolPing 会请求**辅助功能**权限，用来读取鼠标和键盘。点“打开系统设置”并打开 lolPing。授权后立即可以发信号。
@@ -51,7 +51,7 @@ Mac 版需要 Apple 芯片（M1 或更新）的 Mac 和 macOS 12 或更新版本
 
 ### 升级旧版本
 
-从 v0.4 或更早的版本更新：请手动下载一次新版本。从 v0.5 起，lolPing 会自己更新（见[更新](#更新)）。
+从[本仓库最新版本](https://github.com/liyongliao/lolPing/releases/latest)下载增强版并覆盖安装，已有设置会保留。
 
 ## 使用
 
@@ -86,13 +86,7 @@ Mac 版需要 Apple 芯片（M1 或更新）的 Mac 和 macOS 12 或更新版本
 
 ## 更新
 
-lolPing 在启动 10 秒后向 GitHub 检查一次新版本，之后每 6 小时检查一次。有新版本时，屏幕上会出现提示，托盘菜单和**设置 → 应用 → 关于**里也会出现**更新**。更新前会先询问：在你点击之前不会下载任何内容。
-
-- **Windows：** 点一下即可下载安装程序、校验、静默安装到原来的文件夹，并重启 lolPing。重启后会打开设置窗口。
-- **Mac：** lolPing 把磁盘映像下载到“下载”文件夹，校验后先说明接下来的步骤，再打开它，然后退出。请把 lolPing 拖进“应用程序”，选择**替换**，打开它，并再次允许辅助功能。
-- 托盘菜单或**设置 → 应用 → 关于**中的**检查更新**会立即检查。从托盘菜单检查时，结果（已是最新版本，或出错的原因）会以屏幕通知的形式显示。
-- **自动检查更新**（设置 → 应用，默认开启）控制定时检查。关闭后，只有在你点击**检查更新**或**更新**时，lolPing 才会联系 GitHub。
-- **隐私：** 每次检查都会让 GitHub 知道你的 IP 地址和 lolPing 的版本号，别的都不会发送。
+请从[本仓库最新版本](https://github.com/liyongliao/lolPing/releases/latest)手动下载更新。本增强版暂未启用自动更新；上游更新通道已暂停，避免安装原版后丢失快捷功能。
 
 ## 和朋友一起发信号（房间）
 
