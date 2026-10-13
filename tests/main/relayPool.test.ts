@@ -126,7 +126,7 @@ describe('RelayPool', () => {
     vi.advanceTimersByTime(1000);
     from(URLS[1], first);
     expect(events.filter((e) => e.id === first.id)).toHaveLength(2);
-  });
+  }, 15_000); // 513 real signatures/verifications can exceed 5s on shared Windows runners.
 
   it('caps incoming events at 200 per second across relays', () => {
     pool.start();
@@ -137,7 +137,7 @@ describe('RelayPool', () => {
     vi.advanceTimersByTime(1000);
     from(URLS[2], ev(other, 'later'));
     expect(events).toHaveLength(201);
-  });
+  }, 15_000); // Keep the rate-limit assertions; allow time for the real cryptography.
 
   it('does not count duplicates against the budget', () => {
     pool.start();
