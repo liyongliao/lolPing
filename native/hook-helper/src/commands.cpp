@@ -94,6 +94,14 @@ Command parseCommand(const std::string& line, const Config& current) {
     c.flag = getBool(m, "on", false);
   } else if (type == "shutdown") {
     c.kind = Command::Kind::Shutdown;
+  } else if (type == "scroll") {
+    const auto x = getInt(m, "x", 1000001), y = getInt(m, "y", 1000001);
+    const auto pixels = getInt(m, "pixels", 0), request = getInt(m, "request", 0);
+    if (x < -100000 || x > 100000 || y < -100000 || y > 100000 ||
+        pixels < 1 || pixels > 400 || request < 1 || request > 2147483647) return c;
+    c.kind = Command::Kind::Scroll;
+    c.x = static_cast<int>(x); c.y = static_cast<int>(y);
+    c.pixels = static_cast<int>(pixels); c.request = static_cast<int>(request);
   } else if (type == "sim") {
     const std::string ev = getStr(m, "ev");
     c.timeMs = static_cast<uint64_t>(getInt(m, "t", 0));

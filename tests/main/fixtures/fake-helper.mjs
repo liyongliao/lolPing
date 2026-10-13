@@ -16,6 +16,7 @@ if (mode === 'noaccess') {
       const cmd = JSON.parse(buf.slice(0, i));
       buf = buf.slice(i + 1);
       if (cmd.type === 'shutdown') process.exit(0);
+      if (cmd.type === 'scroll' && mode === 'scroll') { process.stdout.write(`${JSON.stringify({type:'scrolled', request:cmd.request, ok:cmd.x !== -1})}\n`); continue; }
       // Echo back what we received so the test can observe it.
       process.stdout.write(`${JSON.stringify({ type: 'error', message: `got:${cmd.type}` })}\n`);
     }

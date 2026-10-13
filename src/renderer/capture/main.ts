@@ -33,8 +33,12 @@ async function apply(data: CaptureFrame | null) {
     preview.hidden = !scroll; preview.src = data.dataUrl;
     document.getElementById('scroll-next')!.hidden = !scroll;
     document.getElementById('scroll-done')!.hidden = !scroll;
+    document.getElementById('scroll-next')!.textContent = data.paused ? '继续滚动' : '暂停';
     return;
   }
+  const decoded = new Image(); decoded.src = data.dataUrl;
+  await decoded.decode();
+  if (token !== generation) return;
   if (data.mode === 'advanced') {
     image.hidden = true; shade.hidden = true; toolbar.hidden = true; advanced.hidden = false;
     hint.textContent = '正在加载高级截图工具…';
@@ -42,8 +46,12 @@ async function apply(data: CaptureFrame | null) {
     if (token === generation) unmount = module.mountAdvanced(advanced, data);
   } else {
     image.src = data.dataUrl;
+    await image.decode();
     hint.textContent = '拖动框选，松开即复制到剪贴板';
   }
+  if (data.mode === 'advanced') await document.fonts.load('18px screenshots-icon');
+  await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  if (token === generation) await api.ready(data.session);
 }
 api.onFrame(data => void apply(data));
 void api.frame().then(data => { if (!frame && data) void apply(data); });
@@ -54,7 +62,7 @@ document.getElementById('scroll-next')!.addEventListener('click', () => void api
 document.getElementById('scroll-done')!.addEventListener('click', () => void api.scrollDone());
 toolbar.addEventListener('pointerdown', e => e.stopPropagation());
 panel.addEventListener('pointerdown', e => e.stopPropagation());
-window.addEventListener('keydown', e => { if (e.key === 'Escape') cancel(); });
+window.addEventListener('keydown', e => { if (e.key === 'Escape') { if (frame?.stage === 'scroll') void api.scrollDone(); else cancel(); } });
 root.addEventListener('contextmenu', e => { if (frame?.mode === 'fast' || frame?.stage !== 'capture') { e.preventDefault(); cancel(); } });
 function rectangle(e: PointerEvent) {
   const x = Math.max(0, Math.min(innerWidth, e.clientX)), y = Math.max(0, Math.min(innerHeight, e.clientY));

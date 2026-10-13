@@ -106,6 +106,20 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "$app"
           file "$app/Contents/Resources/hook-helper" | grep -q arm64
           test -f "$app/Contents/Resources/trayTemplate@2x.png"
+      - name: Test packaged Mac screenshot tools and room controls
+        run: npx playwright test
+        env:
+          LOLPING_E2E_EXECUTABLE: ${{ github.workspace }}/release/mac-arm64/lolPing.app/Contents/MacOS/lolPing
+          LOLPING_SCREENSHOT_DIR: ${{ github.workspace }}/test-results/screenshots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mac-shortcut-test-results
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
       - uses: actions/upload-artifact@v4
         with:
           name: lolPing-mac-arm64

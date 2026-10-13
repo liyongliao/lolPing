@@ -25,3 +25,10 @@ export function PermissionCard({ stale }: { stale: boolean }) {
     </div>
   );
 }
+
+export function ScreenPermissionCard() {
+  return <div className="card permission"><span className="icon"><ShieldKeyhole24Regular /></span><div className="lbl">
+    <b>请允许屏幕录制权限</b><p className="desc">在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中开启 lolPing，然后按系统提示重新打开应用。截图只在你主动使用时采集。</p>
+    <div className="actions"><Button appearance="primary" onClick={() => void api.openScreenAccess()}>授权屏幕录制</Button></div>
+  </div></div>;
+}

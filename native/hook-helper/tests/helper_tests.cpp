@@ -930,7 +930,17 @@ static void test_right_ping_gesture_and_left_cancel() {
   CHECK(parseCommand("{\"type\":\"config\",\"rightPing\":true}", Config{}).config.rightPing);
 }
 
+static void test_scroll_command() {
+  const auto c = parseCommand("{\"type\":\"scroll\",\"x\":-150,\"y\":240,\"pixels\":120,\"request\":7}", Config{});
+  CHECK(c.kind == Command::Kind::Scroll);
+  CHECK(c.x == -150 && c.y == 240 && c.pixels == 120 && c.request == 7);
+  CHECK(parseCommand("{\"type\":\"scroll\",\"pixels\":120,\"request\":7}", Config{}).kind == Command::Kind::Invalid);
+  CHECK(parseCommand("{\"type\":\"scroll\",\"x\":0,\"y\":0,\"pixels\":999,\"request\":1}", Config{}).kind == Command::Kind::Invalid);
+  CHECK(parseCommand("{\"type\":\"scroll\",\"x\":0,\"y\":0,\"pixels\":120,\"request\":0}", Config{}).kind == Command::Kind::Invalid);
+}
+
 int main() {
+  test_scroll_command();
   test_right_ping_gesture_and_left_cancel();
   test_json_parses_flat_objects();
   test_json_rejects_bad_input();

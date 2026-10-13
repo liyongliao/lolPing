@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { createInterface } from 'node:readline';
 import {
-  HELPER_EXIT_NO_ACCESS, parseHelperLine, serializeCommand, type HelperCommand, type HelperStatus,
+  HELPER_EXIT_NO_ACCESS, parseHelperLine, serializeCommand, type HelperCommand, type HelperStatus, type HelperEvent,
 } from '../shared/protocol';
 import { RestartPolicy } from './restartPolicy';
 
@@ -20,6 +20,7 @@ export interface BridgeOptions {
  * Events: 'event' (HelperEvent), 'status' (HelperStatus), 'log' (string).
  */
 export class InputBridge extends EventEmitter {
+  private scrollRequest = 0;
   private child: ChildProcess | null = null;
   private stopping = false;
   private lastConfig: HelperCommand | null = null;
@@ -64,6 +65,20 @@ export class InputBridge extends EventEmitter {
   send(cmd: HelperCommand): void {
     if (cmd.type === 'config') this.lastConfig = cmd;
     this.write(cmd);
+  }
+
+  scroll(x: number, y: number, pixels: number): Promise<void> {
+    if (this.current !== 'running') return Promise.reject(new Error('自动滚动需要辅助功能权限，请先在设置中授权'));
+    const request = ++this.scrollRequest;
+    return new Promise((resolve, reject) => {
+      const done = (error?: Error) => { clearTimeout(timer); this.off('event', receive); error ? reject(error) : resolve(); };
+      const receive = (event: HelperEvent) => {
+        if (event.type === 'scrolled' && event.request === request) done(event.ok ? undefined : new Error('系统未能滚动目标窗口，请确认它没有以管理员身份运行'));
+      };
+      const timer = setTimeout(() => done(new Error('自动滚动未响应，请确认辅助功能权限和目标窗口')), 1200);
+      this.on('event', receive);
+      this.send({ type: 'scroll', x, y, pixels, request });
+    });
   }
 
   /** Manual restart after the bridge gave up. */

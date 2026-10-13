@@ -1,11 +1,11 @@
-import { app, BrowserWindow, clipboard, ClipboardItem, desktopCapturer, ipcMain, nativeImage, screen, type Display, type NativeImage } from 'electron';
+import { app, BrowserWindow, clipboard, ClipboardItem, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen, systemPreferences, type Display, type NativeImage } from 'electron';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { boundedCrop, type CaptureFrame, type CaptureMode, type CaptureRect } from '../shared/capture';
 import { appendScrollFrame, type BitmapFrame } from '../shared/scrollStitch';
 import { IS_MAC, loadPage, preloadPath } from './paths';
 import { OcrService } from './ocrService';
-const compositorTick = () => new Promise(resolve => setTimeout(resolve, 40));
+const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 const bitmap = (image: NativeImage): BitmapFrame => ({ ...image.getSize(), pixels: image.toBitmap() });
 
 export class ScreenshotTool {
@@ -20,9 +20,12 @@ export class ScreenshotTool {
   private focused: BrowserWindow | null = null;
   private display: Display | null = null;
   private ocr = new OcrService();
-  private scroll: { rect: CaptureRect; previous: BitmapFrame; composite: BitmapFrame; frames: number; running: boolean } | null = null;
+  private renderReady: { session: number; resolve(): void } | null = null;
+  private stopKey = false;
+  private panelOutside = false;
+  private scroll: { rect: CaptureRect; previous: BitmapFrame; composite: BitmapFrame; frames: number; running: boolean; paused: boolean; finishing: boolean; unchanged: number } | null = null;
   readonly folder = join(app.getPath('pictures'), 'lolPing');
-  constructor(private readonly deps: { saveFiles(): boolean; mode(): CaptureMode; onBusy(on: boolean): void; report(name: string, detail: string, ok: boolean): void }) {
+  constructor(private readonly deps: { scroll(x: number, y: number, pixels: number): Promise<void>; saveFiles(): boolean; mode(): CaptureMode; onBusy(on: boolean): void; report(name: string, detail: string, ok: boolean): void }) {
     this.ipc('frame', () => this.payload);
     this.ipc('finish', async (rect: unknown) => {
       try {
@@ -35,8 +38,9 @@ export class ScreenshotTool {
       finally { this.cleanup(); }
     });
     this.ipc('advanced', (rect, png, action) => this.advanced(rect, png, action));
-    this.ipc('scrollNext', () => this.scrollNext());
-    this.ipc('scrollDone', async () => { if (!this.scroll || this.scroll.running) return; try { await this.copy(this.scrollImage()); } finally { this.cleanup(); } });
+    this.ipc('ready', session => { const pending = this.renderReady; if (pending && session === pending.session) pending.resolve(); });
+    this.ipc('scrollNext', () => this.toggleScroll());
+    this.ipc('scrollDone', () => this.scrollDone());
     // Preload only the tiny selection page. No screen access, editor or OCR work happens here.
     void this.prepare().catch(() => undefined);
   }
@@ -48,7 +52,7 @@ export class ScreenshotTool {
   }
   private prepare(): Promise<void> {
     if (this.window && !this.window.isDestroyed() && this.ready) return this.ready;
-    const win = new BrowserWindow({ ...screen.getPrimaryDisplay().bounds, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, enableLargerThanScreen: true, show: false, backgroundColor: '#101820', webPreferences: { preload: preloadPath('capture'), sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    const win = new BrowserWindow({ ...screen.getPrimaryDisplay().bounds, frame: false, resizable: false, movable: false, minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, enableLargerThanScreen: true, show: false, backgroundColor: '#101820', webPreferences: { preload: preloadPath('capture'), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
     this.window = win;
     win.setAlwaysOnTop(true, 'screen-saver');
     if (IS_MAC) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -60,9 +64,10 @@ export class ScreenshotTool {
     return this.ready;
   }
   async capture(region: boolean, mode = this.deps.mode()): Promise<void> {
-    if (this.scroll) { await this.scrollNext(); return; }
+    if (this.scroll) { await this.scrollDone(); return; }
     if (this.busy) throw new Error('已有截图正在进行，请完成或按 Esc 取消');
     if (this.disposed) return;
+    if (IS_MAC && !process.env.LOLPING_TEST_DATA_DIR && systemPreferences.getMediaAccessStatus('screen') !== 'granted') throw new Error('请先在设置中授权屏幕录制，并按系统提示重新打开应用');
     const started = performance.now();
     this.busy = true; this.session++; this.deps.onBusy(true);
     this.focused = BrowserWindow.getFocusedWindow();
@@ -70,15 +75,21 @@ export class ScreenshotTool {
     for (const w of this.restore) w.hide();
     try {
       this.display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-      // Only wait for the compositor to hide our own UI, instead of an unconditional 220ms delay.
-      await compositorTick();
+      // Window hide/minimise animations can last several compositor frames on both systems.
+      await delay(450);
       this.image = await this.readScreen(this.display);
       if (this.disposed) return;
       if (!region) { await this.copy(this.image); this.cleanup(); return; }
       await this.prepare();
       if (this.disposed || !this.window) return;
       this.window.setBounds(this.display.bounds);
+      const ready = new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => { this.renderReady = null; reject(new Error('截图画面加载超时，请重试')); }, 8000);
+        this.renderReady = { session: this.session, resolve: () => { clearTimeout(timer); this.renderReady = null; resolve(); } };
+      });
       this.setFrame({ dataUrl: mode === 'fast' ? `data:image/jpeg;base64,${this.image.toJPEG(88).toString('base64')}` : this.image.toDataURL(), ...this.image.getSize(), session: this.session, mode, stage: 'capture' });
+      await ready;
+      if (this.disposed || !this.busy) return;
       this.window.show(); this.window.focus();
       console.log('[capture]', mode, 'ready in', Math.round(performance.now() - started), 'ms');
     } catch (e) { this.cleanup(); throw e; }
@@ -113,9 +124,12 @@ export class ScreenshotTool {
     const id = this.session;
     try {
       if (action === 'scroll') {
+        if (crop.width < 64 || crop.height < 120) throw new Error('请框选更大的可滚动内容区域，并避开固定标题和工具栏');
         const first = bitmap(this.image.crop(crop));
-        this.scroll = { rect: crop, previous: first, composite: first, frames: 1, running: false };
-        this.showPanel('scroll', '向下滚动内容，再捕获下一屏；需保留部分重叠内容');
+        this.scroll = { rect: crop, previous: first, composite: first, frames: 1, running: false, paused: false, finishing: false, unchanged: 0 };
+        this.stopKey = globalShortcut.register('Escape', () => void this.scrollDone());
+        this.showPanel('scroll', '正在自动向下滚动和拼接 · Esc / 截图快捷键停止并复制');
+        void this.autoScroll();
         return;
       }
       if (action === 'text') {
@@ -136,30 +150,79 @@ export class ScreenshotTool {
   private showPanel(stage: 'scroll' | 'working', message: string): void {
     if (!this.window || !this.display) return;
     const b = this.display.workArea;
-    this.window.setBounds({ x: b.x + b.width - 430, y: b.y + b.height - 190, width: 420, height: 175 });
-    this.setFrame({ dataUrl: stage === 'scroll' ? this.scrollImage().resize({ width: 70 }).toDataURL() : '', width: this.scroll?.composite.width ?? 0, height: this.scroll?.composite.height ?? 0, session: this.session, mode: 'advanced', stage, message, frames: this.scroll?.frames });
+    let panel = { x: b.x + b.width - 430, y: b.y + b.height - 190, width: 420, height: 175 };
+    this.panelOutside = false;
+    if (stage === 'scroll' && this.scroll && this.image) {
+      const d = this.display.bounds, r = this.scroll.rect, size = this.image.getSize();
+      const area = { x: d.x + r.x * d.width / size.width, y: d.y + r.y * d.height / size.height, width: r.width * d.width / size.width, height: r.height * d.height / size.height };
+      const positions = [{x:area.x + area.width + 10,y:area.y}, {x:area.x,y:area.y + area.height + 10}, {x:area.x - 430,y:area.y}, {x:area.x,y:area.y - 185}];
+      const fit = positions.find(p => p.x >= b.x && p.y >= b.y && p.x + 420 <= b.x + b.width && p.y + 175 <= b.y + b.height);
+      if (fit) { panel = {...panel, x:Math.round(fit.x), y:Math.round(fit.y)}; this.panelOutside = true; }
+    }
+    this.window.setBounds(panel);
+    this.setFrame({ dataUrl: stage === 'scroll' ? this.scrollImage().resize({ width: 70 }).toDataURL() : '', width: this.scroll?.composite.width ?? 0, height: this.scroll?.composite.height ?? 0, session: this.session, mode: 'advanced', stage, message, frames: this.scroll?.frames, paused: this.scroll?.paused, stopping: this.scroll?.finishing });
     this.window.showInactive();
   }
-  private async scrollNext(): Promise<void> {
+  private toggleScroll(): void {
     const scroll = this.scroll;
-    if (!scroll || scroll.running || !this.display) return;
-    const id = this.session;
+    if (!scroll || scroll.finishing) return;
+    scroll.paused = !scroll.paused;
+    this.showPanel('scroll', scroll.paused ? '已暂停 · 可继续滚动，或停止并复制当前长图' : '正在自动向下滚动和拼接');
+    if (!scroll.paused && !scroll.running) void this.autoScroll();
+  }
+  private async scrollDone(): Promise<void> {
+    const scroll = this.scroll;
+    if (!scroll || scroll.finishing) return;
+    // Mark stopped before any await: in-flight captures must never append or issue another wheel event.
+    scroll.finishing = true;
+    try { await this.copy(this.scrollImage()); }
+    catch (e) { this.deps.report('长图复制失败', (e as Error).message, false); }
+    finally { this.cleanup(); }
+  }
+  private async autoScroll(): Promise<void> {
+    const scroll = this.scroll, display = this.display, id = this.session;
+    if (!scroll || !display || scroll.running || scroll.finishing) return;
     scroll.running = true;
-    this.window?.hide();
+    const active = () => this.session === id && this.scroll === scroll && !scroll.finishing && !scroll.paused && !this.disposed;
+    const began = Date.now();
     try {
-      await compositorTick();
-      const current = await this.readScreen(this.display);
-      if (this.session !== id || !this.busy) return;
-      const original = this.image!.getSize(), size = current.getSize();
-      if (original.width !== size.width || original.height !== size.height) throw new Error('显示器尺寸变化，请重新截图');
-      const next = bitmap(current.crop(scroll.rect));
-      const merged = appendScrollFrame(scroll.composite, scroll.previous, next);
-      const changed = merged !== scroll.composite;
-      scroll.composite = merged;
-      if (changed) { scroll.previous = next; scroll.frames++; }
-      this.showPanel('scroll', changed ? '已追加，继续向下滚动并捕获，或完成复制' : '内容未变化，请向下滚动一些后再捕获');
-    } catch (e) { if (this.session === id && this.busy) this.showPanel('scroll', (e as Error).message); }
-    finally { scroll.running = false; }
+      // Leave time to restore the target window after dismissing the full-screen editor.
+      await delay(500);
+      while (active()) {
+        if (!this.panelOutside) this.window?.hide();
+        await delay(160);
+        if (!active()) break;
+        const size = this.image!.getSize();
+        const point = { x: Math.round(display.bounds.x + (scroll.rect.x + scroll.rect.width / 2) * display.bounds.width / size.width), y: Math.round(display.bounds.y + (scroll.rect.y + scroll.rect.height / 2) * display.bounds.height / size.height) };
+        const nativePoint = IS_MAC ? point : screen.dipToScreenPoint(point);
+        if (!(process.env.LOLPING_TEST_DATA_DIR && process.env.LOLPING_TEST_CAPTURE_BACKEND === 'electron')) {
+          await this.deps.scroll(nativePoint.x, nativePoint.y, Math.min(240, Math.max(24, Math.round(scroll.rect.height * display.bounds.height / size.height * 0.35))));
+        }
+        await delay(450); // allow smooth scrolling and newly exposed content to settle
+        if (!active()) break;
+        const current = await this.readScreen(display);
+        if (!active()) break;
+        const nextSize = current.getSize();
+        if (size.width !== nextSize.width || size.height !== nextSize.height) throw new Error('显示器尺寸变化，请重新截图');
+        const next = bitmap(current.crop(scroll.rect));
+        const merged = appendScrollFrame(scroll.composite, scroll.previous, next);
+        const changed = merged !== scroll.composite;
+        scroll.composite = merged;
+        if (changed) { scroll.previous = next; scroll.frames++; scroll.unchanged = 0; }
+        else scroll.unchanged++;
+        if (scroll.unchanged >= 3) { await this.scrollDone(); return; }
+        this.showPanel('scroll', changed ? '正在自动滚动和拼接 · Esc / 截图快捷键停止并复制' : '正在确认是否已到底…');
+        if (Date.now() - began > 120000 || scroll.frames >= 150) throw new Error('已达到本次滚动上限，可停止并复制当前长图');
+        await delay(250); // keep the stop/pause controls available between frames
+      }
+    } catch (e) {
+      if (this.session === id && !scroll.finishing) { scroll.paused = true; this.showPanel('scroll', `${(e as Error).message}；已保留当前长图，可停止并复制`); }
+    } finally {
+      scroll.running = false;
+      if (this.session === id && scroll.paused && !scroll.finishing) this.showPanel('scroll', this.payload?.message ?? '已暂停');
+      // A quick pause/resume while a frame was pending should restart exactly one loop.
+      if (active()) void this.autoScroll();
+    }
   }
   private async copy(image: NativeImage): Promise<void> {
     if (image.isEmpty()) throw new Error('截图为空，请重试');
@@ -172,6 +235,8 @@ export class ScreenshotTool {
     setTimeout(() => { if (!this.disposed) this.deps.report('截图已复制到剪贴板', this.deps.saveFiles() ? '同时保存到 图片 / lolPing' : '直接粘贴到聊天、笔记或文档', true); }, 80);
   }
   private cleanup(): void {
+    this.renderReady?.resolve(); this.renderReady = null;
+    if (this.stopKey) { globalShortcut.unregister('Escape'); this.stopKey = false; }
     this.session++; this.image = null; this.scroll = null; this.busy = false; this.display = null;
     if (this.window && !this.window.isDestroyed()) { this.window.hide(); this.setFrame(null); }
     if (!this.disposed) {
@@ -184,6 +249,6 @@ export class ScreenshotTool {
   dispose(): void {
     this.disposed = true; this.cleanup(); this.ocr.dispose();
     const win = this.window; this.window = null; if (win && !win.isDestroyed()) win.destroy();
-    for (const name of ['frame', 'finish', 'advanced', 'scrollNext', 'scrollDone']) ipcMain.removeHandler(`capture:${name}`);
+    for (const name of ['frame', 'ready', 'finish', 'advanced', 'scrollNext', 'scrollDone']) ipcMain.removeHandler(`capture:${name}`);
   }
 }

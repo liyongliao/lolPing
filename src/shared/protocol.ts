@@ -10,6 +10,7 @@ export type WheelKind = 'ping' | 'emote';
  */
 export type HelperEvent =
   | { type: 'ready'; version: number }
+  | { type: 'scrolled'; request: number; ok: boolean }
   | { type: 'wheelOpen' | 'wheelMove' | 'wheelRelease' | 'click'; x: number; y: number; wheel: WheelKind; button?: MarkerButton }
   | { type: 'cancel' }
   | { type: 'toggled'; enabled: boolean }
@@ -38,6 +39,8 @@ export function parseHelperLine(line: string): HelperEvent | null {
   switch (o.type) {
     case 'ready':
       return isInt(o.version) ? { type: 'ready', version: o.version } : null;
+    case 'scrolled':
+      return isInt(o.request) && typeof o.ok === 'boolean' ? { type: 'scrolled', request: o.request, ok: o.ok } : null;
     case 'cancel':
       return { type: 'cancel' };
     case 'toggled':
@@ -81,6 +84,7 @@ export type HelperCommand =
     }
   | { type: 'setEnabled'; enabled: boolean }
   | { type: 'suspend'; on: boolean }
+  | { type: 'scroll'; x: number; y: number; pixels: number; request: number }
   | { type: 'shutdown' };
 
 export function configCommand(s: Settings, enabled: boolean): HelperCommand {

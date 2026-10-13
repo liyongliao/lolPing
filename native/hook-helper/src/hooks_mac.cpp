@@ -178,6 +178,19 @@ void handleCommand(const std::string& text) {
     case Command::Kind::Config: apply(g_decision->setConfig(c.config)); break;
     case Command::Kind::SetEnabled: apply(g_decision->setEnabled(c.flag)); break;
     case Command::Kind::Suspend: apply(g_decision->setSuspended(c.flag)); break;
+    case Command::Kind::Scroll: {
+      const CGPoint point = CGPointMake(c.x, c.y);
+      CGWarpMouseCursorPosition(point);
+      CGEventRef wheel = CGEventCreateScrollWheelEvent(nullptr, kCGScrollEventUnitPixel, 1, -c.pixels);
+      if (wheel) {
+        CGEventSetLocation(wheel, point);
+        CGEventSetIntegerValueField(wheel, kCGEventSourceUserData, kSelfMarker);
+        CGEventPost(kCGHIDEventTap, wheel);
+        CFRelease(wheel);
+      }
+      g_out->line("{\"type\":\"scrolled\",\"request\":" + std::to_string(c.request) + ",\"ok\":" + (wheel ? "true" : "false") + "}");
+      break;
+    }
     case Command::Kind::Shutdown: CFRunLoopStop(CFRunLoopGetCurrent()); break;
     default: g_out->error("invalid command: " + text); break;
   }

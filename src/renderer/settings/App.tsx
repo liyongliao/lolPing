@@ -16,7 +16,7 @@ import { api } from './api';
 import { AboutSection } from './components/AboutSection';
 import { EmoteSection } from './components/EmoteSection';
 import { KeyCapture } from './components/KeyCapture';
-import { PermissionCard } from './components/PermissionCard';
+import { PermissionCard, ScreenPermissionCard } from './components/PermissionCard';
 import { RoomSection } from './components/RoomSection';
 import { SettingRow, SliderRow, SwitchRow } from './components/rows';
 import { StatusCard } from './components/StatusCard';
@@ -142,6 +142,7 @@ function SettingsPage({ settings: s, status, update }: { settings: Settings; sta
       </nav>
       <main className="content" ref={mainRef} onScroll={onScroll}>
         <h1 className="pageTitle">{t.pageTitle}</h1>
+        {status.screenAccess === false ? <ScreenPermissionCard /> : null}
         {status.helper === 'noAccess' ? <PermissionCard stale={status.staleAccess === true} /> : null}
         <StatusCard settings={s} status={status} />
 

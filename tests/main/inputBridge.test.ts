@@ -32,6 +32,19 @@ afterEach(async () => {
 });
 
 describe('InputBridge', () => {
+  it('waits for the matching native scroll acknowledgement and propagates rejection', async () => {
+    const b = bridge('scroll');
+    await expect(b.scroll(0, 0, 120)).rejects.toThrow('辅助功能');
+    const running = waitFor<string>(b, 'status', s => s === 'running'); b.start(); await running;
+    await Promise.all([b.scroll(20, 30, 120), b.scroll(40, 50, 120)]);
+    await expect(b.scroll(-1, 0, 120)).rejects.toThrow('系统未能滚动');
+    expect(b.listenerCount('event')).toBe(0);
+  });
+  it('times out a missing scroll acknowledgement without leaving an event listener', async () => {
+    const b=bridge('echo'); const running=waitFor<string>(b,'status',s=>s==='running'); b.start(); await running;
+    await expect(b.scroll(20,30,120)).rejects.toThrow('未响应');
+    expect(b.listenerCount('event')).toBe(0);
+  });
   it('reports running and forwards events both ways', async () => {
     const b = bridge('echo');
     const running = waitFor<string>(b, 'status', (s) => s === 'running');

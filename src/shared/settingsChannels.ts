@@ -16,6 +16,7 @@ export const SETTINGS_CH = {
   retryHelper: 'app:retryHelper',
   capture: 'app:capture',
   openAccessibility: 'app:openAccessibility',
+  openScreenAccess: 'app:openScreenAccess',
   roomGet: 'room:get',
   roomChanged: 'room:state',
   roomCreate: 'room:create',

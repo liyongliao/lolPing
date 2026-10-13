@@ -57,6 +57,7 @@ export interface AppStatus {
    * left by an update (ad-hoc signatures change every build): it has to be removed and added again.
    */
   staleAccess?: boolean;
+  screenAccess?: boolean;
 }
 
 export interface About {
@@ -100,6 +101,7 @@ export interface SettingsApi {
   setCapturing(on: boolean): Promise<void>;
   /** macOS: asks for Accessibility access and opens that page of System Settings. */
   openAccessibility(): Promise<void>;
+  openScreenAccess(): Promise<void>;
   getRoom(): Promise<RoomState>;
   onRoom(cb: (s: RoomState) => void): () => void;
   createRoom(): Promise<void>;

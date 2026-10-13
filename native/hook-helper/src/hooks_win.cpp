@@ -271,6 +271,19 @@ int runHooks(Output& out) {
         case Command::Kind::Config: apply(decision.setConfig(c.config)); break;
         case Command::Kind::SetEnabled: apply(decision.setEnabled(c.flag)); break;
         case Command::Kind::Suspend: apply(decision.setSuspended(c.flag)); break;
+        case Command::Kind::Scroll: {
+          // Runs on the message thread, outside the low-level hooks (SendInput there can deadlock).
+          const bool moved = SetCursorPos(c.x, c.y) != 0;
+          const HWND target = GetAncestor(WindowFromPoint(POINT{c.x, c.y}), GA_ROOT);
+          if (target) SetForegroundWindow(target);
+          INPUT wheel{}; wheel.type = INPUT_MOUSE;
+          wheel.mi.dwFlags = MOUSEEVENTF_WHEEL;
+          wheel.mi.mouseData = static_cast<DWORD>(-WHEEL_DELTA);
+          wheel.mi.dwExtraInfo = kSelfMarker;
+          const bool ok = moved && SendInput(1, &wheel, sizeof(INPUT)) == 1;
+          out.line("{\"type\":\"scrolled\",\"request\":" + std::to_string(c.request) + ",\"ok\":" + (ok ? "true" : "false") + "}");
+          break;
+        }
         case Command::Kind::Shutdown: PostQuitMessage(0); break;
         default: out.error("invalid command: " + *text); break;
       }

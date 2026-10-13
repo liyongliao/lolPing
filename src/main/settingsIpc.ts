@@ -31,6 +31,7 @@ export interface SettingsIpcDeps {
   retryHelper(): void;
   setCapturing(on: boolean): void;
   openAccessibility(): void;
+  openScreenAccess(): Promise<void>;
   /** Strings in the app's current language. */
   text(): Strings;
   platform: Platform;
@@ -134,6 +135,7 @@ export function registerSettingsIpc(d: SettingsIpcDeps): void {
   });
   ipcMain.handle(SETTINGS_CH.retryHelper, () => d.retryHelper());
   ipcMain.handle(SETTINGS_CH.capture, (_e, on: unknown) => d.setCapturing(on === true));
+  ipcMain.handle(SETTINGS_CH.openScreenAccess, () => d.openScreenAccess());
   ipcMain.handle(SETTINGS_CH.openAccessibility, () => d.openAccessibility());
   ipcMain.handle(SETTINGS_CH.roomGet, () => d.room.state());
   ipcMain.handle(SETTINGS_CH.roomCreate, () => d.room.create());

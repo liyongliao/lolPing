@@ -1,6 +1,6 @@
 import { scopeAllows, markerButton } from '../shared/mouseButtons';
 import { QuickActions } from './quickActions';
-import { app, clipboard, dialog, Menu, powerMonitor, screen, shell, systemPreferences } from 'electron';
+import { app, clipboard, dialog, desktopCapturer, Menu, powerMonitor, screen, shell, systemPreferences } from 'electron';
 import { randomBytes, randomInt } from 'node:crypto';
 import { userInfo } from 'node:os';
 import { join } from 'node:path';
@@ -32,6 +32,7 @@ import { MacBackend, RELEASES_API } from './updateMac';
 import { WinBackend } from './updateWin';
 import { Updater } from './updater';
 
+const SCREEN_PANE = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture';
 const ACCESSIBILITY_PANE = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility';
 
 registerAppScheme();
@@ -98,6 +99,7 @@ function start(): void {
   const syncSuspend = (): void => bridge.send({ type: 'suspend', on: capturing || screenshotting });
   const quickActions = new QuickActions({
     settings: () => settings.quickActions,
+    scroll: (x, y, pixels) => bridge.scroll(x, y, pixels),
     enabled: () => enabled && !quitting,
     suspend: (on) => { screenshotting = on; overlays.cancelWheel(); syncSuspend(); },
     toast: (title, body) => overlays.toast(title, body),
@@ -181,6 +183,7 @@ function start(): void {
   // the permission instead. `staleAccess`: macOS lists lolPing as allowed, yet the helper still has no access.
   let accessTimer: NodeJS.Timeout | null = null;
   let staleAccess = false;
+  const screenReady = (): boolean => !IS_MAC || !!process.env.LOLPING_TEST_DATA_DIR || systemPreferences.getMediaAccessStatus('screen') === 'granted';
   const trusted = (): boolean => !IS_MAC || systemPreferences.isTrustedAccessibilityClient(false);
   const stopWaitingForAccess = (): void => {
     if (accessTimer) clearInterval(accessTimer);
@@ -204,7 +207,7 @@ function start(): void {
   };
 
   const helperStatus = (): HelperStatus => (accessTimer ? 'noAccess' : bridge.status);
-  const status = (): AppStatus => ({ enabled, helper: helperStatus(), staleAccess });
+  const status = (): AppStatus => ({ enabled, helper: helperStatus(), staleAccess, screenAccess: screenReady() });
   const trayMode = (): TrayMode => {
     const h = helperStatus();
     if (h === 'failed' || h === 'noAccess') return h;
@@ -362,6 +365,19 @@ function start(): void {
     }
   });
 
+  const openScreenAccess = async (): Promise<void> => {
+    if (!IS_MAC || process.env.LOLPING_TEST_DATA_DIR) return;
+    const win = openSettingsWindow();
+    win.show(); win.focus(); app.focus({ steal: true });
+    if (systemPreferences.getMediaAccessStatus('screen') === 'not-determined') {
+      // Ask at startup/on the permission card, before hiding any windows for a screenshot.
+      await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } }).catch(() => undefined);
+    }
+    if (!screenReady()) await shell.openExternal(SCREEN_PANE);
+    pushStatus();
+  };
+  const refreshPermissions = (): void => { if (!quitting) pushStatus(); };
+  app.on('browser-window-focus', refreshPermissions);
   registerSettingsIpc({
     store,
     quickActions,
@@ -376,6 +392,7 @@ function start(): void {
       capturing = on;
       syncSuspend();
     },
+    openScreenAccess,
     openAccessibility: () => {
       systemPreferences.isTrustedAccessibilityClient(true); // adds lolPing to the list and shows the system prompt
       void shell.openExternal(ACCESSIBILITY_PANE);
@@ -414,7 +431,26 @@ function start(): void {
   if (settings.rejoinRoom && settings.lastRoomCode) void room.join(settings.lastRoomCode);
   if (IS_MAC) {
     // A menu bar app: open settings only when there is something to do, otherwise point at the menu bar icon.
-    if (store.firstRun || !trusted()) openSettingsWindow();
+    if (store.firstRun || !trusted() || !screenReady()) {
+      const win = openSettingsWindow();
+      if (!process.env.LOLPING_TEST_DATA_DIR && (!trusted() || !screenReady())) {
+        const prompt = async () => {
+          if (quitting || win.isDestroyed()) return;
+          win.show(); win.focus(); app.focus({ steal: true });
+          const { response } = await dialog.showMessageBox(win, {
+            type: 'info', title: 'lolPing 需要系统权限', message: '启用截图和鼠标标记',
+            detail: '屏幕录制：用于截图、滚动截图和文字识别。\n辅助功能：用于鼠标标记和自动滚动。\n请在系统设置中允许 lolPing；屏幕录制授权后，按系统提示重新打开应用。',
+            buttons: ['授权屏幕录制', '打开辅助功能设置', '稍后'], defaultId: screenReady() ? 1 : 0, cancelId: 2,
+          });
+          if (response === 0) await openScreenAccess();
+          else if (response === 1) {
+            app.focus({ steal: true }); systemPreferences.isTrustedAccessibilityClient(true);
+            await shell.openExternal(ACCESSIBILITY_PANE);
+          }
+        };
+        if (win.isVisible()) void prompt(); else win.once('ready-to-show', () => void prompt());
+      }
+    }
     else overlays.toast(text().toastMenuBar, text().toastMenuBarBody);
   } else if (!process.argv.includes('--hidden')) {
     openSettingsWindow();
@@ -433,6 +469,7 @@ function start(): void {
     updater?.stop(); // aborts a download and drops a check in flight; an install that is quitting the app is left alone
     room.quit(); // says bye, so the others see "left" instead of waiting for a timeout
     stopWaitingForAccess();
+    app.off('browser-window-focus', refreshPermissions);
     tray.destroy();
     overlays.destroy();
     void Promise.allSettled([bridge.stop(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
