@@ -37,9 +37,9 @@ npm run test:e2e
 
 Mac（Apple Silicon）：`npm run dist:mac`，产物为 `release/lolPing-0.5.1-arm64.dmg`。
 
-Windows（x64，在 Windows 上执行）：`npm run dist`，产物为 `release/lolPing-Setup-0.5.1.exe`。GitHub Actions 的 CI 在 Windows 上测试并生成安装包，在 Mac 上保留原版构建与签名校验。增强版仓库为 [liyongliao/lolPing](https://github.com/liyongliao/lolPing)。推送到 main 或 codex/* 分支会自动构建，也可在 Actions → CI → Run workflow 手动运行。通过测试后下载 `lolPing-windows-x64` artifact，其中包含安装 EXE、SHA-256 校验文件和构建来源。Windows 工作流先静默安装生成的 EXE，再针对实际安装目录运行桌面测试。
+Windows（x64，在 Windows 上执行）：`npm run dist`，产物为 `release/lolPing-Setup-0.5.1.exe`。GitHub Actions 的 CI 在 Windows 上测试并生成安装包，在 Mac 上保留原版构建与签名校验。增强版仓库为 [liyongliao/lolPing](https://github.com/liyongliao/lolPing)。推送到 main 或 codex/* 分支会自动构建，合并到 main 后，也可在 Actions → CI → Run workflow 手动运行。通过测试后下载 `lolPing-windows-x64` artifact，其中包含安装 EXE、SHA-256 校验文件和构建来源。Windows 工作流先静默安装生成的 EXE，再针对实际安装目录运行桌面测试。
 
-本机验证：macOS arm64，类型检查通过；731 项 TypeScript 测试通过、1 项上游测试跳过；411 项原生 C++ 检查通过；5 项 Electron 桌面流程测试通过。桌面测试覆盖创建规则与重启持久化、连发阈值与冷却、预览/远程信号隔离、原轮盘松手选中到动作执行、真实窗口框选/剪贴板/取消、无效配置和快捷键冲突。截图测试使用合成图像替代屏幕采集，避免读取个人屏幕内容，不代表已完成系统录屏权限验证。macOS 安装包的五项桌面测试也已全部通过，应用包通过 ad-hoc 签名校验。Windows 尚未在本次环境实机验证。
+本机验证：macOS arm64，类型检查通过；731 项 TypeScript 测试通过、1 项上游测试跳过；411 项原生 C++ 检查通过；5 项 Electron 桌面流程测试通过。桌面测试覆盖创建规则与重启持久化、连发阈值与冷却、预览/远程信号隔离、原轮盘松手选中到动作执行、真实窗口框选/剪贴板/取消、无效配置和快捷键冲突。截图测试使用合成图像替代屏幕采集，避免读取个人屏幕内容，不代表已完成系统录屏权限验证。macOS 安装包的五项桌面测试也已全部通过，应用包通过 ad-hoc 签名校验。Windows 已在 GitHub 托管的 Windows runner 上完成安装及桌面自动化验证，详见下方构建记录；尚未在用户自己的 Windows 电脑上验收。
 
 ## 来源与维护
 
@@ -62,3 +62,16 @@ CI 使用 GitHub 托管的 Windows runner，保留测试报告、失败追踪和
 - 仅在完整测试成功后上传安装包；失败时仍上传测试报告用于定位。
 
 Windows 专用测试在 macOS 上跳过。上述是自动化验收范围；具体运行结果以对应提交的 Actions 记录为准。
+
+
+## 已验证的 Windows 构建（2026-10-13）
+
+- [GitHub Actions 成功记录](https://github.com/liyongliao/lolPing/actions/runs/38346542320)
+- 构建提交：`6e0cbca9f8dddab55a429f0a87050041c489eddf`，分支 `codex/windows-shortcuts`。
+- Windows x64 安装包已在 runner 上实际安装，随后对安装目录内的程序执行测试。
+- 411 项原生模块检查、732 项 TypeScript 测试、7 项 Electron 桌面测试全部通过。
+- 原生输入验收使用 Windows 系统输入事件操作轮盘，实际启动了中文和空格路径下的测试 EXE；截图验收使用真实桌面采集和图片剪贴板。
+- 产物：`lolPing-windows-x64`（EXE、SHA256SUMS.txt、BUILD-INFO.txt）；报告：`windows-shortcut-test-results`。
+- 同一提交的 macOS 构建和签名检查也通过。安装包 artifact 保留 30 天，测试报告保留 14 天；到期后可重新运行构建。
+
+首次验收修复了测试脚本对 Windows 空剪贴板的处理，并改用带扫描码的 Alt 和真实鼠标移动输入；密码学批量测试单独放宽为 15 秒，以适应共享 runner 的速度。所有断言及原生交互验收均保留，没有跳过 Windows 快捷功能测试。
