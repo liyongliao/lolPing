@@ -22,7 +22,8 @@ async function launch() {
 async function backupClipboard() {
   await app.evaluate(async ({ clipboard, ClipboardItem }) => {
     const items = await clipboard.read();
-    const saved = await Promise.all(items.map(async item => new ClipboardItem(Object.fromEntries(await Promise.all(item.types.map(async type => [type, await item.getType(type)]))))));
+    // Windows can return an empty item for an empty clipboard. It has no data to restore.
+    const saved = await Promise.all(items.filter(item => item.types.length > 0).map(async item => new ClipboardItem(Object.fromEntries(await Promise.all(item.types.map(async type => [type, await item.getType(type)]))))));
     (globalThis as unknown as { testClipboard: Electron.ClipboardItem[] }).testClipboard = saved;
   });
 }
