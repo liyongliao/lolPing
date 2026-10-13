@@ -15,6 +15,7 @@ import { updateErrorText, type UpdateState } from '../shared/update';
 import { registerAppScheme, serveAppScheme } from './appProtocol';
 import { resolveTarget, toShared } from './displayNumbers';
 import { EmoteLibrary, resolveEmoteArt } from './emoteLibrary';
+import { drainShutdown } from './shutdownDrain';
 import { InputBridge } from './inputBridge';
 import { LanTransport } from './lanTransport';
 import { RELAYS } from './relays';
@@ -465,13 +466,21 @@ function start(): void {
     if (quitting) return;
     quitting = true;
     event.preventDefault();
-    quickActions.dispose();
-    updater?.stop(); // aborts a download and drops a check in flight; an install that is quitting the app is left alone
-    room.quit(); // says bye, so the others see "left" instead of waiting for a timeout
-    stopWaitingForAccess();
-    app.off('browser-window-focus', refreshPermissions);
-    tray.destroy();
-    overlays.destroy();
-    void Promise.allSettled([bridge.stop(), store.flush(), lan.whenClosed(), relay.whenClosed()]).then(() => app.exit(0));
+    const persist = store.flush();
+    void (async () => {
+      try {
+        quickActions.dispose();
+        updater?.stop();
+        room.quit();
+        stopWaitingForAccess();
+        app.off('browser-window-focus', refreshPermissions);
+        tray.destroy();
+        overlays.destroy();
+        await drainShutdown(persist, [bridge.stop(), lan.whenClosed(), relay.whenClosed()]);
+      } catch (error) {
+        console.warn('[shutdown]', (error as Error).message);
+        await persist.catch(() => undefined);
+      } finally { app.exit(0); }
+    })();
   });
 }
