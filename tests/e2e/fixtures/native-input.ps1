@@ -38,7 +38,7 @@ try {
       [LolPingInput]::keybd_event(0xA4, 0x38, 0, [UIntPtr]::Zero)
       Start-Sleep -Milliseconds 100
       if (([LolPingInput]::GetAsyncKeyState(0xA4) -band 0x8000) -eq 0) { throw 'Windows did not hold the injected Alt key' }
-      [LolPingInput]::Mouse(2)
+      [LolPingInput]::Mouse(2, 0, 0)
       Start-Sleep -Milliseconds 100
       # Real movement events exercise the low-level input hook, rather than just teleporting the cursor.
       for ($step = 1; $step -le 5; $step++) {
@@ -47,13 +47,13 @@ try {
         Start-Sleep -Milliseconds 40
       }
       Start-Sleep -Milliseconds 200
-      [LolPingInput]::Mouse(4)
+      [LolPingInput]::Mouse(4, 0, 0)
       [LolPingInput]::keybd_event(0xA4, 0x38, 2, [UIntPtr]::Zero)
       Start-Sleep -Milliseconds 150
     }
   }
 } finally {
-  [LolPingInput]::Mouse(4)
+  [LolPingInput]::Mouse(4, 0, 0)
   foreach ($key in @(0xA4, 0x12, 0x11, 0x10, 0x32)) {
     [LolPingInput]::keybd_event($key, 0, 2, [UIntPtr]::Zero)
   }
