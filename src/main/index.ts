@@ -100,9 +100,8 @@ function start(): void {
   const syncSuspend = (): void => bridge.send({ type: 'suspend', on: capturing || screenshotting });
   const quickActions = new QuickActions({
     settings: () => settings.quickActions,
-    scroll: (x, y, pixels) => bridge.scroll(x, y, pixels),
     enabled: () => enabled && !quitting,
-    suspend: (on) => { screenshotting = on; overlays.cancelWheel(); syncSuspend(); },
+    suspend: (on) => { screenshotting = on; overlays.setSuspended(on); syncSuspend(); },
     toast: (title, body) => overlays.toast(title, body),
   });
 
@@ -440,7 +439,7 @@ function start(): void {
           win.show(); win.focus(); app.focus({ steal: true });
           const { response } = await dialog.showMessageBox(win, {
             type: 'info', title: 'lolPing 需要系统权限', message: '启用截图和鼠标标记',
-            detail: '屏幕录制：用于截图、滚动截图和文字识别。\n辅助功能：用于鼠标标记和自动滚动。\n请在系统设置中允许 lolPing；屏幕录制授权后，按系统提示重新打开应用。',
+            detail: '屏幕录制：用于截图和文字识别。\n辅助功能：用于鼠标标记和轮盘快捷键。\n请在系统设置中允许 lolPing；屏幕录制授权后，按系统提示重新打开应用。',
             buttons: ['授权屏幕录制', '打开辅助功能设置', '稍后'], defaultId: screenReady() ? 1 : 0, cancelId: 2,
           });
           if (response === 0) await openScreenAccess();

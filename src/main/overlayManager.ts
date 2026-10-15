@@ -44,6 +44,9 @@ export class OverlayManager extends EventEmitter {
   private numberedList: NumberedDisplay[] = [];
   private wheelDisplay: number | null = null;
   private wheelKind: WheelKind = 'ping';
+  private suspended = false;
+  private raising = new WeakSet<BrowserWindow>();
+  private wheelGuard: ReturnType<typeof setInterval> | null = null;
 
   /** `resolveArt` says what an emote looks like: `remote` is true for a room member's, whose files may be missing here. */
   constructor(private settings: OverlaySettings, private readonly resolveArt: (ref: EmoteRef, remote: boolean) => EmoteArt) {
@@ -82,6 +85,7 @@ export class OverlayManager extends EventEmitter {
   }
 
   handle(ev: HelperEvent): void {
+    if (this.suspended) return;
     switch (ev.type) {
       case 'wheelOpen': {
         const p = physicalToLocal(ev.x, ev.y, this.maps);
@@ -89,6 +93,7 @@ export class OverlayManager extends EventEmitter {
         this.wheelDisplay = p.displayId;
         this.wheelKind = ev.wheel;
         this.send(p.displayId, 'wheel:open', { x: p.x, y: p.y, wheel: ev.wheel, ...(ev.button === 'right' ? { button: 'right' as const } : {}) });
+        this.guardWheel();
         break;
       }
       case 'wheelMove':
@@ -97,7 +102,7 @@ export class OverlayManager extends EventEmitter {
         const p = physicalToLocal(ev.x, ev.y, this.maps, this.wheelDisplay);
         if (!p) return;
         this.send(p.displayId, ev.type === 'wheelMove' ? 'wheel:move' : 'wheel:release', { x: p.x, y: p.y, wheel: this.wheelKind, ...(ev.button === 'right' ? { button: 'right' as const } : {}) });
-        if (ev.type === 'wheelRelease') this.wheelDisplay = null;
+        if (ev.type === 'wheelRelease') { this.wheelDisplay = null; this.stopGuard(); }
         break;
       }
       case 'click': {
@@ -154,15 +159,55 @@ export class OverlayManager extends EventEmitter {
   }
 
   destroy(): void {
+    this.stopGuard();
     for (const w of this.windows.values()) if (!w.isDestroyed()) w.destroy();
     this.windows.clear();
   }
 
   /** Dismisses a wheel that is on screen, if any. Also used when the helper stops: its cancel would never arrive. */
   cancelWheel(): void {
+    this.stopGuard();
     if (this.wheelDisplay === null) return;
     this.send(this.wheelDisplay, 'wheel:cancel', null);
     this.wheelDisplay = null;
+  }
+
+  /** Screenshot capture owns visibility until it has restored the windows. */
+  setSuspended(on: boolean): void {
+    this.suspended = on;
+    this.cancelWheel();
+    if (!on) for (const win of this.windows.values()) {
+      if (!win.isDestroyed() && win.isVisible()) this.raise(win);
+    }
+  }
+
+  private raise(win: BrowserWindow): void {
+    if (this.suspended || win.isDestroyed() || this.raising.has(win)) return;
+    this.raising.add(win);
+    try {
+      // Windows can retain the logical always-on-top flag after shell/window transitions.
+      // Reapply the native band, then its z-order, without activating the foreground app.
+      if (!IS_MAC) win.setAlwaysOnTop(false);
+      win.setAlwaysOnTop(true, 'screen-saver');
+      if (!win.isVisible()) win.showInactive();
+      win.moveTop();
+    } finally { this.raising.delete(win); }
+  }
+
+  private guardWheel(): void {
+    this.stopGuard();
+    if (IS_MAC || this.suspended) return;
+    // Only while a wheel is held: idle overlays must not fight other topmost windows.
+    this.wheelGuard = setInterval(() => {
+      const win = this.wheelDisplay === null ? undefined : this.windows.get(this.wheelDisplay);
+      if (win) this.raise(win);
+    }, 250);
+    this.wheelGuard.unref();
+  }
+
+  private stopGuard(): void {
+    if (this.wheelGuard) clearInterval(this.wheelGuard);
+    this.wheelGuard = null;
   }
 
   private displayOf(sender: WebContents): number | undefined {
@@ -214,7 +259,7 @@ export class OverlayManager extends EventEmitter {
       alwaysOnTop: true,
       enableLargerThanScreen: true, // also stops macOS pushing the window below the menu bar
       show: false,
-      type: IS_MAC ? 'panel' : 'toolbar', // a macOS panel can float over full-screen apps
+      ...(IS_MAC ? { type: 'panel' as const } : {}), // Windows uses an ordinary top-level overlay.
       webPreferences: {
         preload: preloadPath('overlay'),
         backgroundThrottling: false,
@@ -226,9 +271,12 @@ export class OverlayManager extends EventEmitter {
     win.setAlwaysOnTop(true, 'screen-saver');
     if (IS_MAC) win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
     win.webContents.on('did-finish-load', () => win.webContents.send('overlay:settings', this.settings));
+    win.on('show', () => this.raise(win));
+    win.on('restore', () => this.raise(win));
     win.once('ready-to-show', () => {
       win.showInactive();
       win.setBounds(d.bounds); // re-apply: mixed-DPI setups can size the first frame wrong
+      this.raise(win);
     });
     void loadPage(win, 'overlay');
     return win;
@@ -236,6 +284,11 @@ export class OverlayManager extends EventEmitter {
 
   private send<C extends OverlayChannel>(displayId: number, channel: C, payload: OverlayEvents[C]): void {
     const w = this.windows.get(displayId);
-    if (w && !w.isDestroyed()) w.webContents.send(channel, payload);
+    if (!w || w.isDestroyed()) return;
+    const presents = channel === 'wheel:open' || channel === 'ping:spawn' || channel === 'emote:spawn' || channel === 'toast:show';
+    // Remote room messages can arrive during capture, too. Do not reveal or paint them over it.
+    if (presents && this.suspended) return;
+    if (presents) this.raise(w);
+    w.webContents.send(channel, payload);
   }
 }

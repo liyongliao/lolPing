@@ -27,15 +27,8 @@ async function apply(data: CaptureFrame | null) {
   if (data.stage !== 'capture') {
     image.hidden = true; shade.hidden = true; toolbar.hidden = true; panel.hidden = false;
     panel.dataset.stage=data.stage;
-    const scroll = data.stage === 'scroll';
-    document.getElementById('panel-title')!.textContent = scroll ? `滚动截图 · ${data.frames} 屏 · ${data.width} × ${data.height}` : '离线文字识别';
+    document.getElementById('panel-title')!.textContent = '离线文字识别';
     document.getElementById('panel-message')!.textContent = data.message ?? '';
-    document.getElementById('panel-message')!.title=data.message ?? '';
-    const preview = document.getElementById('long-preview') as HTMLImageElement;
-    preview.hidden = !scroll; preview.src = data.dataUrl;
-    document.getElementById('scroll-next')!.hidden = !scroll;
-    document.getElementById('scroll-done')!.hidden = !scroll;
-    document.getElementById('scroll-next')!.textContent = data.paused ? '继续截取' : data.automatic ? '改为手动' : '自动滚动';
     return;
   }
   const decoded = new Image(); decoded.src = data.dataUrl;
@@ -59,11 +52,9 @@ void api.frame().then(data => { if (!frame && data) void apply(data); });
 const cancel = () => { if (!busy || frame?.stage === 'working') void api.finish(null); };
 document.getElementById('cancel')!.addEventListener('click', cancel);
 document.getElementById('panel-cancel')!.addEventListener('click', () => void api.finish(null));
-document.getElementById('scroll-next')!.addEventListener('click', () => void api.scrollNext());
-document.getElementById('scroll-done')!.addEventListener('click', () => void api.scrollDone());
 toolbar.addEventListener('pointerdown', e => e.stopPropagation());
 panel.addEventListener('pointerdown', e => e.stopPropagation());
-window.addEventListener('keydown', e => { if (e.key === 'Escape') { if (frame?.stage === 'scroll') void api.scrollDone(); else cancel(); } });
+window.addEventListener('keydown', e => { if (e.key === 'Escape') { cancel(); } });
 root.addEventListener('contextmenu', e => { if (frame?.mode === 'fast' || frame?.stage !== 'capture') { e.preventDefault(); cancel(); } });
 function rectangle(e: PointerEvent) {
   const x = Math.max(0, Math.min(innerWidth, e.clientX)), y = Math.max(0, Math.min(innerHeight, e.clientY));

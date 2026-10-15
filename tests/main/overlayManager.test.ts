@@ -1,10 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmoteArt } from '../../src/shared/emotes';
 import { OVERLAY_EMOTED, OVERLAY_PINGED } from '../../src/shared/ipc';
 import { DEFAULT_SETTINGS, overlaySettings } from '../../src/shared/settings';
 
 const h = vi.hoisted(() => ({
-  windows: [] as Array<{ x: number; webContents: { send: ReturnType<typeof vi.fn> } }>,
+  windows: [] as Array<{ x: number; visible: boolean; topmost: boolean; destroyed: boolean; emit(name: string): boolean; moveTop: ReturnType<typeof vi.fn>; webContents: { send: ReturnType<typeof vi.fn> } }>,
   handlers: new Map<string, (event: unknown, raw: unknown) => void>(),
 }));
 
@@ -22,13 +22,18 @@ vi.mock('electron', async () => {
       h.windows.push(this);
     }
     setIgnoreMouseEvents(): void {}
-    setAlwaysOnTop(): void {}
+    visible = true;
+    topmost = true;
+    destroyed = false;
+    setAlwaysOnTop(value: boolean): void { this.topmost = value; }
     setBounds(): void {}
-    showInactive(): void {}
+    moveTop = vi.fn();
+    showInactive(): void { this.visible = true; this.emit('show'); }
+    isVisible(): boolean { return this.visible; }
     isDestroyed(): boolean {
-      return false;
+      return this.destroyed;
     }
-    destroy(): void {}
+    destroy(): void { this.destroyed = true; }
   }
   const displays = [
     { id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 },
@@ -59,6 +64,7 @@ const sent = (i: number): Array<[string, unknown]> =>
   h.windows[i].webContents.send.mock.calls.filter((c) => c[0] !== 'overlay:settings') as Array<[string, unknown]>;
 
 beforeEach(async () => {
+  vi.useFakeTimers();
   h.windows.length = 0;
   h.handlers.clear();
   vi.resetModules();
@@ -66,6 +72,57 @@ beforeEach(async () => {
   resolveArt = vi.fn(art);
   mgr = new OverlayManager(overlaySettings({ ...DEFAULT_SETTINGS, clickEmoteId: 'okay' }), resolveArt);
   mgr.start();
+});
+afterEach(async () => { mgr.destroy(); (await import('electron')).screen.removeAllListeners(); vi.useRealTimers(); });
+
+describe('overlay visibility recovery', () => {
+  it('recovers a demoted or shell-hidden overlay whenever a wheel or marker is requested', () => {
+    const win = h.windows[0];
+    win.visible = false; win.topmost = false;
+    mgr.handle({ type: 'wheelOpen', x: 100, y: 100, wheel: 'ping' });
+    expect(win.visible).toBe(true); expect(win.topmost).toBe(true);
+    win.topmost = false;
+    mgr.previewPing('assist');
+    expect(win.topmost).toBe(true);
+    expect(win.moveTop).toHaveBeenCalled();
+  });
+  it('keeps a held wheel above newly raised windows but stops guarding after release or destruction', () => {
+    const win = h.windows[0];
+    mgr.handle({ type: 'wheelOpen', x: 100, y: 100, wheel: 'ping' });
+    win.topmost = false;
+    vi.advanceTimersByTime(250);
+    expect(win.topmost).toBe(true);
+    mgr.handle({ type: 'wheelRelease', x: 100, y: 200, wheel: 'ping' });
+    win.moveTop.mockClear(); vi.advanceTimersByTime(1000);
+    expect(win.moveTop).not.toHaveBeenCalled();
+    mgr.handle({ type: 'wheelOpen', x: 100, y: 100, wheel: 'ping' });
+    mgr.destroy(); win.moveTop.mockClear(); vi.advanceTimersByTime(1000);
+    expect(win.moveTop).not.toHaveBeenCalled();
+  });
+  it('never resurfaces during a screenshot, even with incoming room markers or a pending guard', () => {
+    const win = h.windows[0];
+    mgr.handle({ type: 'wheelOpen', x: 100, y: 100, wheel: 'ping' });
+    mgr.setSuspended(true); win.visible = false; win.topmost = false;
+    win.moveTop.mockClear(); win.webContents.send.mockClear();
+    mgr.spawnRemote({ displayId: 1, x: 50, y: 50, id: 'assist', tag: { name: 'Bob', color: 2 } });
+    mgr.toast('test', 'test');
+    mgr.handle({ type: 'wheelOpen', x: 100, y: 100, wheel: 'ping' });
+    vi.advanceTimersByTime(1000);
+    expect(win.moveTop).not.toHaveBeenCalled(); expect(win.visible).toBe(false);
+    expect(win.webContents.send).not.toHaveBeenCalled();
+    win.visible = true; win.emit('show');
+    expect(win.topmost).toBe(false);
+    mgr.setSuspended(false);
+    expect(win.topmost).toBe(true);
+  });
+  it('reasserts topmost on show and restore without starting an idle timer', () => {
+    const win = h.windows[0];
+    for (const event of ['show', 'restore']) {
+      win.topmost = false; win.emit(event); expect(win.topmost).toBe(true);
+    }
+    win.moveTop.mockClear(); vi.advanceTimersByTime(1000);
+    expect(win.moveTop).not.toHaveBeenCalled();
+  });
 });
 
 describe('OverlayManager wheels', () => {

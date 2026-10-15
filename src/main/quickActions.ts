@@ -35,8 +35,8 @@ export class QuickActions {
   private capturing = false;
   private disposed = false;
   private screenshot: ScreenshotTool;
-  constructor(private readonly deps: { settings(): QuickActionsSettings; enabled(): boolean; suspend(on: boolean): void; scroll(x: number, y: number, pixels: number): Promise<void>; toast(title: string, body: string): void }) {
-    this.screenshot = new ScreenshotTool({ scroll: deps.scroll, saveFiles: () => deps.settings().saveScreenshots, mode: () => deps.settings().screenshotMode, onBusy: on => { this.capturing = on; this.engine.breakSequence(); deps.suspend(on); this.broadcast(); }, report: (name, detail, ok) => this.report(name, detail, ok) });
+  constructor(private readonly deps: { settings(): QuickActionsSettings; enabled(): boolean; suspend(on: boolean): void; toast(title: string, body: string): void }) {
+    this.screenshot = new ScreenshotTool({ saveFiles: () => deps.settings().saveScreenshots, mode: () => deps.settings().screenshotMode, onBusy: on => { this.capturing = on; this.engine.breakSequence(); deps.suspend(on); this.broadcast(); }, report: (name, detail, ok) => this.report(name, detail, ok) });
     this.register(deps.settings().screenshotShortcut);
     this.ipc('quick:get', () => this.state());
     this.ipc('quick:pickApp', async () => {

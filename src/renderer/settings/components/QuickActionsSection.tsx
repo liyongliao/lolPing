@@ -72,8 +72,8 @@ export function QuickActionsSection({ settings, update }: { settings: Settings; 
     {!config.rules.length && <div className="card qa-empty">还没有规则。添加一个，让熟悉的信号帮你做点事。</div>}
     {removed && <div className="qa-note qa-undo">已删除「{removed.name}」<Button appearance="subtle" size="small" onClick={async () => { if (await save({ ...config, rules: [...config.rules, removed] })) setRemoved(null); }}>撤销</Button></div>}
     <div className="qa-heading"><b>截图工具</b><span className="desc">松开鼠标即复制，Esc / 右键取消</span></div>
-    <SettingRow icon={<Camera24Regular />} title="截图模式" description="快速模式默认开启：框选即复制，不加载标注、OCR 和滚动拼接。高级模式按需加载工具。">
-      <Select aria-label="截图模式" value={config.screenshotMode} onChange={(_, d) => void save({ ...config, screenshotMode: d.value as 'fast' | 'advanced' })}><option value="fast">快速截图（默认）</option><option value="advanced">高级截图：标注 / OCR / 滚动</option></Select>
+    <SettingRow icon={<Camera24Regular />} title="截图模式" description="快速模式默认开启：框选即复制，不加载标注和 OCR。高级模式按需加载工具。">
+      <Select aria-label="截图模式" value={config.screenshotMode} onChange={(_, d) => void save({ ...config, screenshotMode: d.value as 'fast' | 'advanced' })}><option value="fast">快速截图（默认）</option><option value="advanced">高级截图：标注 / OCR</option></Select>
     </SettingRow>
     <SettingRow icon={<Camera24Regular />} title="截图并复制到剪贴板" description="截图时自动隐藏 lolPing 的轮盘、信号和设置窗口。">
       <Button disabled={state.capturing} onClick={() => void run(() => api.captureScreenshot(true))}>区域截图</Button>

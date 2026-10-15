@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import Screenshots from 'react-screenshots';
 import 'react-screenshots/lib/style.css';
 import type { CaptureFrame, CaptureRect } from '../../shared/capture';
-type Action = 'image' | 'text' | 'scroll';
+type Action = 'image' | 'text';
 function Editor({ frame, element }: { frame: CaptureFrame; element: HTMLElement }) {
   const [viewport,setViewport]=useState({width:innerWidth,height:innerHeight});
   useEffect(()=>{const resize=()=>setViewport({width:innerWidth,height:innerHeight});window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);},[]);
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [message, setMessage] = useState('拖动框选区域，选择标注、提取文字或滚动截图');
+  const [message, setMessage] = useState('拖动框选区域，选择标注或提取文字');
   const [busy, setBusy] = useState(false);
   const requested = useRef<Action>('image');
   const pending = useRef(false);
@@ -63,7 +63,6 @@ function Editor({ frame, element }: { frame: CaptureFrame; element: HTMLElement 
     <Screenshots url={frame.dataUrl} width={viewport.width} height={viewport.height} onOk={finish} onSave={finish} onCancel={() => void window.captureApi.finish(null)} lang={{ operation_save_title: '复制到剪贴板', operation_ok_title: '完成', operation_text_title: '文字标注' }} />
     {host && createPortal(<>
       <button type="button" className="screenshots-button capture-action" title="提取文字" aria-label="提取文字" disabled={busy} onClick={() => execute('text')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V3h4m10 0h4v4M3 17v4h4m10 0h4v-4M8 8h8m-4 0v9m-3 0h6" /></svg></button>
-      <button type="button" className="screenshots-button capture-action" title="滚动截图" aria-label="滚动截图" disabled={busy} onClick={() => execute('scroll')}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8V3h14v5M5 16v5h14v-5M12 7v10m-4-4 4 4 4-4" /></svg></button>
     </>, host)}
     <div className="capture-editor-hint" role="status" hidden={!!host && !busy}>{message}</div>
   </>;

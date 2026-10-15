@@ -6,7 +6,5 @@ const api: CaptureApi = {
   ready: session => ipcRenderer.invoke('capture:ready', session),
   finish: rect => ipcRenderer.invoke('capture:finish', rect),
   advanced: (rect, png, action) => ipcRenderer.invoke('capture:advanced', rect, png, action),
-  scrollNext: () => ipcRenderer.invoke('capture:scrollNext'),
-  scrollDone: () => ipcRenderer.invoke('capture:scrollDone'),
 };
 contextBridge.exposeInMainWorld('captureApi', api);
