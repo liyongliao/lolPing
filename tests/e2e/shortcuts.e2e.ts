@@ -163,6 +163,7 @@ test.describe('Windows native integration', () => {
   };
   test('Windows overlay recovers after native demotion, desktop switching, screenshots and foreground changes', async () => {
     test.setTimeout(120000);
+    await expect.poll(async () => (await page.evaluate(() => window.settingsApi.getStatus())).helper).toBe('running');
     const target = await electron.launch({ args: [resolve('tests/e2e/fixtures/scroll-target.cjs'), `--user-data-dir=${join(data, 'layer-target')}`], timeout: 30000 });
     await expect((await target.firstWindow()).locator('canvas')).toBeVisible();
     const overlayHandle = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find(w => w.webContents.getURL().includes('/overlay/'))!.getNativeWindowHandle().readBigUInt64LE().toString());
@@ -187,7 +188,7 @@ test.describe('Windows native integration', () => {
         await target.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.show(); w.focus(); });
         const foreground = (await layer()).foreground;
         expect(foreground).toBe(targetHandle);
-        await layer('Hold');
+        console.log('Holding native wheel:', await layer('Hold'));
         await expect.poll(() => overlay.evaluate(() => (window as unknown as { wheelOpen: boolean }).wheelOpen)).toBe(true);
         await expect.poll(async () => { const state = await layer(); return state.topmost && state.above && state.visible && state.foreground === foreground; }).toBe(true);
         // Another topmost app moves above an already held, stationary wheel.
@@ -198,7 +199,7 @@ test.describe('Windows native integration', () => {
       }
       await layer('Desktop');
       await target.evaluate(({ BrowserWindow }) => { const w = BrowserWindow.getAllWindows()[0]; w.restore(); w.show(); w.focus(); });
-      await layer('Hold');
+      console.log('Holding wheel after desktop:', await layer('Hold'));
       await expect.poll(async () => { const state = await layer(); return state.above && state.visible && state.foreground === targetHandle; }).toBe(true);
       await layer('Release');
       await mockScreens([await page.evaluate(() => { const c = document.createElement('canvas'); c.width=400; c.height=200; return c.toDataURL(); })]);
